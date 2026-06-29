@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   Grid3X3,
   Calendar,
-  Search,
   Settings,
   LogOut,
   Umbrella,
@@ -18,36 +17,33 @@ import { useBeach } from "@/lib/beach-context";
 import { Dashboard } from "./Dashboard";
 import { BeachGrid } from "./BeachGrid";
 import { AssignmentModal } from "./AssignmentModal";
-import { SearchPanel } from "./SearchPanel";
 import { CalendarView } from "./CalendarView";
 import { PhotoImport } from "./PhotoImport";
 import { UmbrellaPosition } from "@/lib/types";
 
-type Tab = "dashboard" | "grid" | "search" | "calendar" | "settings";
+type Tab = "dashboard" | "grid" | "calendar" | "settings";
 
 const MOBILE_TABS: { id: Tab; label: string; icon: typeof Grid3X3 }[] = [
   { id: "grid", label: "Mappa", icon: Grid3X3 },
-  { id: "search", label: "Cerca", icon: Search },
   { id: "dashboard", label: "Stats", icon: LayoutDashboard },
   { id: "calendar", label: "Periodi", icon: Calendar },
 ];
 
 export function AppShell() {
-  const { logout, role } = useAuth();
+  const { logout } = useAuth();
   const { stats, activePeriod, refresh, error, isReadOnly, loading } = useBeach();
   const [tab, setTab] = useState<Tab>("grid");
   const [selected, setSelected] = useState<UmbrellaPosition | null>(null);
-  const [highlightedIds, setHighlightedIds] = useState<number[]>([]);
+  const [searchHighlightId, setSearchHighlightId] = useState<number | undefined>();
   const [refreshing, setRefreshing] = useState(false);
 
   const handleSelect = (pos: UmbrellaPosition) => {
     setSelected(pos);
-    setHighlightedIds([pos.id]);
   };
 
   const handleSearchSelect = (pos: UmbrellaPosition) => {
-    setTab("grid");
-    handleSelect(pos);
+    setSearchHighlightId(pos.id);
+    setSelected(null);
   };
 
   const handleRefresh = async () => {
@@ -62,7 +58,6 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-gradient-to-b from-sky-50 to-amber-50/30">
-      {/* Header compatto mobile */}
       <header className="sticky top-0 z-40 border-b border-sky-200/60 bg-white/95 backdrop-blur-md safe-top">
         <div className="flex items-center justify-between gap-2 px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -85,6 +80,7 @@ export function AppShell() {
               {isReadOnly ? "Bagnino" : "Admin"}
             </span>
             <button
+              type="button"
               onClick={handleRefresh}
               disabled={refreshing || loading}
               className="rounded-lg p-2 text-gray-500 active:bg-gray-100"
@@ -93,6 +89,7 @@ export function AppShell() {
               <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
             <button
+              type="button"
               onClick={logout}
               className="rounded-lg p-2 text-gray-500 active:bg-gray-100"
               aria-label="Esci"
@@ -106,22 +103,21 @@ export function AppShell() {
         )}
       </header>
 
-      {/* Contenuto */}
       <main className="flex-1 overflow-y-auto px-3 py-3 pb-20">
         {tab === "dashboard" && <Dashboard />}
         {tab === "grid" && (
           <BeachGrid
             selectedId={selected?.id}
-            highlightedIds={highlightedIds}
+            searchHighlightId={searchHighlightId}
             onSelect={handleSelect}
+            onSearchSelect={handleSearchSelect}
           />
         )}
-        {tab === "search" && <SearchPanel onSelect={handleSearchSelect} />}
         {tab === "calendar" && <CalendarView />}
         {tab === "settings" && !isReadOnly && (
           <div className="space-y-4">
             <PhotoImport />
-            <div className="rounded-xl bg-white p-4 shadow-sm text-sm text-gray-500">
+            <div className="rounded-xl bg-white p-4 text-sm text-gray-500 shadow-sm">
               <p>I dati sono salvati sul server e condivisi tra ufficio e spiaggia.</p>
               <p className="mt-2">Si aggiornano automaticamente ogni 20 secondi.</p>
             </div>
@@ -129,12 +125,12 @@ export function AppShell() {
         )}
       </main>
 
-      {/* Bottom navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur-md safe-bottom">
         <div className="flex items-stretch justify-around">
           {tabs.map((t) => (
             <button
               key={t.id}
+              type="button"
               onClick={() => setTab(t.id)}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition active:scale-95 ${
                 tab === t.id ? "text-sky-600" : "text-gray-400"

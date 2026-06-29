@@ -8,17 +8,24 @@ import { Users } from "lucide-react";
 interface UmbrellaCellProps {
   position: UmbrellaPosition;
   selected?: boolean;
-  highlighted?: boolean;
+  searchHighlighted?: boolean;
   compact?: boolean;
   onClick: () => void;
 }
 
-export function UmbrellaCell({ position, selected, highlighted, compact, onClick }: UmbrellaCellProps) {
+export function UmbrellaCell({
+  position,
+  selected,
+  searchHighlighted,
+  compact,
+  onClick,
+}: UmbrellaCellProps) {
   const { getViciniForPosition } = useBeach();
   const vicini = getViciniForPosition(position.id);
 
-  const bgColor =
-    position.status === "assigned"
+  const bgColor = searchHighlighted
+    ? "bg-emerald-200 border-emerald-500"
+    : position.status === "assigned"
       ? "bg-amber-100 border-amber-300"
       : position.status === "blocked"
         ? "bg-red-100 border-red-300"
@@ -28,14 +35,15 @@ export function UmbrellaCell({ position, selected, highlighted, compact, onClick
 
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
-        "umbrella-cell relative flex flex-col items-center justify-center rounded-lg border-2 text-center active:scale-95",
-        compact ? "min-h-[56px] p-1" : "min-h-[48px] w-full p-1",
+        "umbrella-cell relative flex w-full flex-col items-center justify-center rounded-lg border-2 text-center active:scale-95",
+        compact ? "min-h-[56px] p-1" : "min-h-[48px] p-1",
         bgColor,
-        selected && "ring-2 ring-sky-600 ring-offset-1",
-        highlighted && "ring-2 ring-yellow-400",
-        position.status === "blocked" && "opacity-70"
+        searchHighlighted && "z-10 scale-105 shadow-lg shadow-emerald-300/50 ring-2 ring-emerald-500 ring-offset-2",
+        selected && !searchHighlighted && "ring-2 ring-sky-600 ring-offset-1",
+        position.status === "blocked" && !searchHighlighted && "opacity-70"
       )}
       title={`#${position.id} — ${displayCode || "Libero"}`}
     >
