@@ -1,12 +1,15 @@
-import { sql } from "@vercel/postgres";
+import { getSql, isDbConfigured } from "./client";
 import { createEmptyPositions, getInitialState } from "@/lib/seed-data";
 import { BookingPeriod, UmbrellaPosition, UmbrellaStatus, ViciniGroup } from "@/lib/types";
+
+export { isDbConfigured };
 
 let schemaReady: Promise<void> | null = null;
 
 export async function ensureSchema(): Promise<void> {
   if (!schemaReady) {
     schemaReady = (async () => {
+      const sql = getSql();
       await sql`
         CREATE TABLE IF NOT EXISTS periods (
           id TEXT PRIMARY KEY,
@@ -47,16 +50,14 @@ export async function ensureSchema(): Promise<void> {
   return schemaReady;
 }
 
-export async function isDbConfigured(): Promise<boolean> {
-  return Boolean(process.env.POSTGRES_URL);
-}
-
 async function getMeta(key: string): Promise<string | null> {
-  const { rows } = await sql`SELECT value FROM app_meta WHERE key = ${key}`;
-  return rows[0]?.value ?? null;
+  const sql = getSql();
+  const rows = await sql`SELECT value FROM app_meta WHERE key = ${key}`;
+  return (rows[0] as { value: string } | undefined)?.value ?? null;
 }
 
 async function setMeta(key: string, value: string): Promise<void> {
+  const sql = getSql();
   await sql`
     INSERT INTO app_meta (key, value) VALUES (${key}, ${value})
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
@@ -99,6 +100,12 @@ function mergeAssignments(
   });
 }
 
+function parsePositionIds(raw: unknown): number[] {
+  if (Array.isArray(raw)) return raw as number[];
+  if (typeof raw === "string") return JSON.parse(raw || "[]");
+  return [];
+}
+
 export interface ServerState {
   periods: BookingPeriod[];
   activePeriod: BookingPeriod | undefined;
@@ -109,38 +116,34 @@ export interface ServerState {
 
 export async function fetchServerState(): Promise<ServerState> {
   await ensureSchema();
+  const sql = getSql();
 
   const seeded = await getMeta("seeded");
   if (seeded !== "true") {
     await seedDatabase();
   }
 
-  const { rows: periodRows } = await sql`
-    SELECT * FROM periods ORDER BY created_at DESC
-  `;
-  const periods = periodRows.map(rowToPeriod);
+  const periodRows = await sql`SELECT * FROM periods ORDER BY created_at DESC`;
+  const periods = periodRows.map((r) => rowToPeriod(r as Record<string, unknown>));
   const activePeriod = periods.find((p) => p.isActive) ?? periods[0];
   if (!activePeriod) {
     const empty = createEmptyPositions();
     return { periods: [], activePeriod: undefined, positions: empty, viciniGroups: [], lastUpdated: new Date().toISOString() };
   }
 
-  const { rows: assignmentRows } = await sql`
-    SELECT * FROM assignments WHERE period_id = ${activePeriod.id}
-  `;
-  const { rows: viciniRows } = await sql`
-    SELECT * FROM vicini_groups WHERE period_id = ${activePeriod.id}
-  `;
+  const assignmentRows = await sql`SELECT * FROM assignments WHERE period_id = ${activePeriod.id}`;
+  const viciniRows = await sql`SELECT * FROM vicini_groups WHERE period_id = ${activePeriod.id}`;
 
   const layout = createEmptyPositions();
-  const positions = mergeAssignments(layout, assignmentRows, activePeriod);
-  const viciniGroups: ViciniGroup[] = viciniRows.map((r) => ({
-    id: r.id as string,
-    positionIds: Array.isArray(r.position_ids)
-      ? (r.position_ids as number[])
-      : JSON.parse(String(r.position_ids ?? "[]")),
-    label: (r.label as string) ?? undefined,
-  }));
+  const positions = mergeAssignments(layout, assignmentRows as Record<string, unknown>[], activePeriod);
+  const viciniGroups: ViciniGroup[] = viciniRows.map((r) => {
+    const row = r as Record<string, unknown>;
+    return {
+      id: row.id as string,
+      positionIds: parsePositionIds(row.position_ids),
+      label: (row.label as string) ?? undefined,
+    };
+  });
 
   return {
     periods,
@@ -152,6 +155,7 @@ export async function fetchServerState(): Promise<ServerState> {
 }
 
 export async function seedDatabase(): Promise<void> {
+  const sql = getSql();
   const initial = getInitialState();
   const period = initial.periods[0];
 
@@ -189,6 +193,7 @@ export async function createPeriod(input: {
   setActive?: boolean;
 }): Promise<BookingPeriod> {
   await ensureSchema();
+  const sql = getSql();
   const id = `p-${Date.now()}`;
   if (input.setActive !== false) {
     await sql`UPDATE periods SET is_active = false`;
@@ -202,6 +207,7 @@ export async function createPeriod(input: {
 
 export async function activatePeriod(periodId: string): Promise<void> {
   await ensureSchema();
+  const sql = getSql();
   await sql`UPDATE periods SET is_active = false`;
   await sql`UPDATE periods SET is_active = true WHERE id = ${periodId}`;
 }
@@ -217,6 +223,7 @@ export async function upsertAssignment(
   }
 ): Promise<void> {
   await ensureSchema();
+  const sql = getSql();
   if (data.status === "available") {
     await sql`DELETE FROM assignments WHERE period_id = ${periodId} AND position_id = ${positionId}`;
     return;
@@ -238,6 +245,7 @@ export async function bulkImportAssignments(
   assignments: { positionId: number; roomCode: string | null }[]
 ): Promise<void> {
   await ensureSchema();
+  const sql = getSql();
   await sql`DELETE FROM assignments WHERE period_id = ${periodId}`;
 
   for (const a of assignments) {
@@ -262,22 +270,24 @@ export async function fetchPeriodMap(periodId: string): Promise<{
   viciniGroups: ViciniGroup[];
 }> {
   await ensureSchema();
-  const { rows } = await sql`SELECT * FROM periods WHERE id = ${periodId}`;
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM periods WHERE id = ${periodId}`;
   if (!rows[0]) throw new Error("Periodo non trovato");
-  const period = rowToPeriod(rows[0]);
+  const period = rowToPeriod(rows[0] as Record<string, unknown>);
 
-  const { rows: assignmentRows } = await sql`SELECT * FROM assignments WHERE period_id = ${periodId}`;
-  const { rows: viciniRows } = await sql`SELECT * FROM vicini_groups WHERE period_id = ${periodId}`;
+  const assignmentRows = await sql`SELECT * FROM assignments WHERE period_id = ${periodId}`;
+  const viciniRows = await sql`SELECT * FROM vicini_groups WHERE period_id = ${periodId}`;
 
   return {
     period,
-    positions: mergeAssignments(createEmptyPositions(), assignmentRows, period),
-    viciniGroups: viciniRows.map((r) => ({
-      id: r.id as string,
-      positionIds: Array.isArray(r.position_ids)
-        ? (r.position_ids as number[])
-        : JSON.parse(String(r.position_ids ?? "[]")),
-      label: (r.label as string) ?? undefined,
-    })),
+    positions: mergeAssignments(createEmptyPositions(), assignmentRows as Record<string, unknown>[], period),
+    viciniGroups: viciniRows.map((r) => {
+      const row = r as Record<string, unknown>;
+      return {
+        id: row.id as string,
+        positionIds: parsePositionIds(row.position_ids),
+        label: (row.label as string) ?? undefined,
+      };
+    }),
   };
 }
