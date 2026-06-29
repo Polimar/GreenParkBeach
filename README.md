@@ -12,66 +12,65 @@ Una web app moderna per la gestione intelligente dell'assegnazione degli ombrell
 - 📊 **Dashboard** - Visualizza lo stato in tempo reale delle assegnazioni
 - 👥 **Gestione Ospiti** - Traccia quali ospiti hanno ombrelloni assegnati
 - 📅 **Calendario** - Gestisci disponibilità e periodi di occupazione
-- 🔔 **Notifiche** - Avvisi per assegnazioni, ritorni e manutenzione
-- 📈 **Report** - Analisi e statistiche di utilizzo
-- 🔐 **Autenticazione** - Accesso sicuro per il personale autorizzato
+- 🔗 **Gruppi Vicini** - Collega ombrelloni per ospiti che vogliono stare vicini
+- 🔍 **Ricerca** - Cerca per posizione, camera, blocco o nome ospite
+- 📤 **Export/Import** - Condividi i dati tra dispositivi via JSON
+- 🔐 **Autenticazione** - Accesso sicuro per il personale autorizzato (PIN)
 
 ## 🚀 Quick Start
 
 ### Prerequisiti
 
-- Node.js (v14+)
-- npm o yarn
-- Git
+- Node.js (v18+)
+- npm
 
 ### Installazione
 
 ```bash
-# Clone il repository
 git clone https://github.com/polimar/greenparkbeach.git
 cd greenparkbeach
-
-# Installa le dipendenze
 npm install
-
-# Avvia il server di sviluppo
-npm start
+npm run dev
 ```
+
+Apri [http://localhost:3000](http://localhost:3000) — PIN di accesso: `greenpark`
 
 ## 📁 Struttura del Progetto
 
 ```
 greenparkbeach/
-├── frontend/          # Applicazione React
-├── backend/           # API e logica server
-├── docs/              # Documentazione
-├── README.md          # Questo file
-└── .gitignore         # File da ignorare
+├── src/
+│   ├── app/           # Next.js App Router
+│   ├── components/    # Componenti React UI
+│   └── lib/           # Tipi, contesto, dati seed
+├── public/
+├── package.json
+└── README.md
 ```
 
 ## 🛠️ Stack Tecnologico
 
-Da definire durante lo sviluppo:
+- **Frontend**: Next.js 15, React 19, TypeScript
+- **Styling**: Tailwind CSS 4
+- **Icone**: Lucide React
+- **Persistenza**: localStorage (browser) + export/import JSON
+- **Deployment**: Vercel
 
-- **Frontend**: [Da specificare]
-- **Backend**: [Da specificare]
-- **Database**: [Da specificare]
-- **Deployment**: [Da specificare]
+## 🗺️ Layout Spiaggia
 
-## 📝 Come Contribuire
+La mappa replica il foglio cartaceo con **8 file** (1°–8° FILA) e **107 posizioni** totali. Ogni ombrellone può essere:
 
-1. Crea un branch per la tua feature (`git checkout -b feature/AmazingFeature`)
-2. Commit i tuoi cambiamenti (`git commit -m 'Add some AmazingFeature'`)
-3. Push al branch (`git push origin feature/AmazingFeature`)
-4. Apri una Pull Request
+| Stato | Descrizione |
+|-------|-------------|
+| Libero | Posizione disponibile |
+| Assegnato | Camera + blocco (es. `116 V`, `305GR`) |
+| Bloccato | Marcato come `XX` |
+
+I dati iniziali corrispondono al periodo **27/06 – 04/07/2026**.
 
 ## 📄 Licenza
 
-[Da definire]
-
-## 📞 Contatti
-
-Per domande o suggerimenti, contatta il team di sviluppo.
+Vedi [LICENSE.md](LICENSE.md)
 
 ---
 
