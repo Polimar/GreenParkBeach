@@ -35,3 +35,16 @@ npm run dev
 ## Deploy
 
 https://greenpark-beach-valerios-projects-07f3aa00.vercel.app
+
+## PWA (installazione su telefono)
+
+L'app è installabile come PWA da Chrome (Android) e Safari (iOS):
+
+- **Android**: menu Chrome → "Aggiungi a schermata Home"
+- **iOS**: Safari → Condividi → "Aggiungi a Home"
+
+Icone generate dal logo Green Park Village (`logo-gpv1~2_x16.png`). Per rigenerarle:
+
+```bash
+npm run generate-icons
+```
