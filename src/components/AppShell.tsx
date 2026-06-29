@@ -19,6 +19,7 @@ import { SearchPanel } from "./SearchPanel";
 import { CalendarView } from "./CalendarView";
 import { ViciniPanel } from "./ViciniPanel";
 import { DataManagement } from "./DataManagement";
+import { PhotoImport } from "./PhotoImport";
 import { UmbrellaPosition } from "@/lib/types";
 
 type Tab = "dashboard" | "grid" | "calendar" | "vicini" | "settings";
@@ -105,6 +106,7 @@ export function AppShell() {
         {tab === "vicini" && <ViciniPanel />}
         {tab === "settings" && (
           <div className="space-y-4">
+            <PhotoImport />
             <DataManagement />
             <div className="rounded-xl bg-white p-5 shadow-sm">
               <h3 className="mb-2 font-semibold text-gray-800">Informazioni</h3>

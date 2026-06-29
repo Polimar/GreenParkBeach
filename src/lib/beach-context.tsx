@@ -10,9 +10,17 @@ import {
   codeToPosition,
   formatRoomCode,
   getStatusFromCode,
+  migratePosition,
+  normalizeRoomCode,
 } from "@/lib/types";
 
 const STORAGE_KEY = "greenpark-beach-state";
+const STORAGE_VERSION = 2;
+
+interface BulkAssignment {
+  positionId: number;
+  roomCode: string | null;
+}
 
 interface BeachContextValue {
   state: AppState;
@@ -21,6 +29,7 @@ interface BeachContextValue {
   clearUmbrella: (id: number) => void;
   blockUmbrella: (id: number) => void;
   updatePosition: (id: number, data: Partial<UmbrellaPosition>) => void;
+  applyBulkAssignments: (assignments: BulkAssignment[], referenceImage?: string) => void;
   addViciniGroup: (positionIds: number[], label?: string) => void;
   removeViciniGroup: (groupId: string) => void;
   setActivePeriod: (periodId: string) => void;
@@ -41,13 +50,26 @@ interface BeachContextValue {
 
 const BeachContext = createContext<BeachContextValue | null>(null);
 
+function migrateState(parsed: AppState): AppState {
+  return {
+    ...parsed,
+    positions: parsed.positions.map(migratePosition),
+  };
+}
+
 function loadState(): AppState {
   if (typeof window === "undefined") return getInitialState();
   try {
+    const version = localStorage.getItem(`${STORAGE_KEY}-version`);
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored) as AppState;
-      if (parsed.positions?.length === 107) return parsed;
+      if (parsed.positions?.length === 107) {
+        if (version !== String(STORAGE_VERSION)) {
+          return migrateState(parsed);
+        }
+        return migrateState(parsed);
+      }
     }
   } catch {
     // ignore
@@ -67,6 +89,7 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (hydrated) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, lastUpdated: new Date().toISOString() }));
+      localStorage.setItem(`${STORAGE_KEY}-version`, String(STORAGE_VERSION));
     }
   }, [state, hydrated]);
 
@@ -97,15 +120,19 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
 
   const assignUmbrella = useCallback(
     (id: number, data: Partial<UmbrellaPosition>) => {
-      const code = data.room ? formatRoomCode({ ...data, room: data.room } as UmbrellaPosition) : data.code;
-      const parsed = data.room ? codeToPosition(code ?? "") : {};
+      const roomCode = data.roomCode
+        ? normalizeRoomCode(data.roomCode)
+        : data.code
+          ? normalizeRoomCode(data.code)
+          : undefined;
+      if (!roomCode) return;
+      const parsed = codeToPosition(roomCode);
       updatePosition(id, {
-        ...data,
         ...parsed,
-        code: code ?? data.code,
-        status: "assigned",
+        guestName: data.guestName,
         startDate: data.startDate ?? activePeriod?.startDate,
         endDate: data.endDate ?? activePeriod?.endDate,
+        notes: data.notes,
       });
     },
     [updatePosition, activePeriod]
@@ -116,9 +143,7 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
       updatePosition(id, {
         code: null,
         status: "available",
-        room: undefined,
-        block: undefined,
-        isGrande: false,
+        roomCode: undefined,
         guestName: undefined,
         startDate: undefined,
         endDate: undefined,
@@ -133,13 +158,51 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
       updatePosition(id, {
         code: "XX",
         status: "blocked",
-        room: undefined,
-        block: undefined,
-        isGrande: false,
+        roomCode: undefined,
         guestName: undefined,
       });
     },
     [updatePosition]
+  );
+
+  const applyBulkAssignments = useCallback(
+    (assignments: BulkAssignment[], referenceImage?: string) => {
+      setState((prev) => {
+        const map = new Map(assignments.map((a) => [a.positionId, a.roomCode]));
+        return {
+          ...prev,
+          referenceImage: referenceImage ?? prev.referenceImage,
+          positions: prev.positions.map((p) => {
+            if (!map.has(p.id)) return p;
+            const roomCode = map.get(p.id);
+            if (!roomCode) {
+              return {
+                ...p,
+                code: null,
+                status: "available" as const,
+                roomCode: undefined,
+                guestName: undefined,
+                startDate: undefined,
+                endDate: undefined,
+              };
+            }
+            if (roomCode === "XX") {
+              return { ...p, code: "XX", status: "blocked" as const, roomCode: undefined };
+            }
+            const normalized = normalizeRoomCode(roomCode);
+            return {
+              ...p,
+              code: normalized,
+              roomCode: normalized,
+              status: "assigned" as const,
+              startDate: activePeriod?.startDate,
+              endDate: activePeriod?.endDate,
+            };
+          }),
+        };
+      });
+    },
+    [activePeriod]
   );
 
   const addViciniGroup = useCallback((positionIds: number[], label?: string) => {
@@ -177,11 +240,15 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
     setState(getInitialState());
   }, []);
 
-  const exportData = useCallback(() => JSON.stringify(state, null, 2), [state]);
+  const exportData = useCallback(() => {
+    const { referenceImage, ...exportable } = state;
+    void referenceImage;
+    return JSON.stringify(exportable, null, 2);
+  }, [state]);
 
   const importData = useCallback((json: string) => {
     try {
-      const parsed = JSON.parse(json) as AppState;
+      const parsed = migrateState(JSON.parse(json) as AppState);
       if (!parsed.positions?.length) return false;
       setState(parsed);
       return true;
@@ -198,9 +265,8 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
         (p) =>
           String(p.id).includes(q) ||
           p.code?.toLowerCase().includes(q) ||
-          p.room?.includes(q) ||
-          p.guestName?.toLowerCase().includes(q) ||
-          p.block?.toLowerCase().includes(q)
+          p.roomCode?.toLowerCase().includes(q) ||
+          p.guestName?.toLowerCase().includes(q)
       );
     },
     [state.positions]
@@ -218,6 +284,7 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
     clearUmbrella,
     blockUmbrella,
     updatePosition,
+    applyBulkAssignments,
     addViciniGroup,
     removeViciniGroup,
     setActivePeriod,

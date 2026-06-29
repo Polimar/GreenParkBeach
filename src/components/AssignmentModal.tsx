@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, Save, Trash2, Ban, Users } from "lucide-react";
-import { UmbrellaPosition } from "@/lib/types";
+import { UmbrellaPosition, formatRoomCode, isValidRoomCode } from "@/lib/types";
 import { useBeach } from "@/lib/beach-context";
 
 interface AssignmentModalProps {
@@ -11,10 +11,8 @@ interface AssignmentModalProps {
 }
 
 export function AssignmentModal({ position, onClose }: AssignmentModalProps) {
-  const { assignUmbrella, clearUmbrella, blockUmbrella, activePeriod, getViciniForPosition, state } = useBeach();
-  const [room, setRoom] = useState("");
-  const [block, setBlock] = useState("");
-  const [isGrande, setIsGrande] = useState(false);
+  const { assignUmbrella, clearUmbrella, blockUmbrella, activePeriod, getViciniForPosition } = useBeach();
+  const [roomCode, setRoomCode] = useState("");
   const [guestName, setGuestName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -22,9 +20,7 @@ export function AssignmentModal({ position, onClose }: AssignmentModalProps) {
 
   useEffect(() => {
     if (position) {
-      setRoom(position.room ?? "");
-      setBlock(position.block ?? "");
-      setIsGrande(position.isGrande ?? false);
+      setRoomCode(formatRoomCode(position));
       setGuestName(position.guestName ?? "");
       setStartDate(position.startDate ?? activePeriod?.startDate ?? "");
       setEndDate(position.endDate ?? activePeriod?.endDate ?? "");
@@ -35,13 +31,12 @@ export function AssignmentModal({ position, onClose }: AssignmentModalProps) {
   if (!position) return null;
 
   const vicini = getViciniForPosition(position.id);
+  const codeValid = roomCode.trim() === "" || isValidRoomCode(roomCode);
 
   const handleSave = () => {
-    if (!room.trim()) return;
+    if (!roomCode.trim() || !codeValid) return;
     assignUmbrella(position.id, {
-      room: room.trim(),
-      block: isGrande ? undefined : block.trim() || undefined,
-      isGrande,
+      roomCode: roomCode.trim(),
       guestName: guestName.trim() || undefined,
       startDate,
       endDate,
@@ -95,38 +90,25 @@ export function AssignmentModal({ position, onClose }: AssignmentModalProps) {
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">N° Camera</label>
-                <input
-                  value={room}
-                  onChange={(e) => setRoom(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                  placeholder="es. 116"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">Blocco</label>
-                <input
-                  value={block}
-                  onChange={(e) => setBlock(e.target.value.toUpperCase())}
-                  disabled={isGrande}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:bg-gray-100"
-                  placeholder="es. V, B, A"
-                  maxLength={2}
-                />
-              </div>
-            </div>
-
-            <label className="flex items-center gap-2 text-sm">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Nome Camera</label>
               <input
-                type="checkbox"
-                checked={isGrande}
-                onChange={(e) => setIsGrande(e.target.checked)}
-                className="rounded border-gray-300"
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+                  codeValid
+                    ? "border-gray-300 focus:border-sky-500 focus:ring-sky-500"
+                    : "border-red-300 focus:border-red-500 focus:ring-red-500"
+                }`}
+                placeholder="es. 127D, 351GR, 116 V"
               />
-              Ombrellone Grande (GR)
-            </label>
+              <p className="mt-1 text-[11px] text-gray-400">
+                Numero + suffisso (1-2 lettere). Es: 127D, 351GR, 104 B
+              </p>
+              {!codeValid && (
+                <p className="mt-1 text-xs text-red-500">Formato camera non valido</p>
+              )}
+            </div>
 
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Nome Ospite (opzionale)</label>
@@ -176,7 +158,7 @@ export function AssignmentModal({ position, onClose }: AssignmentModalProps) {
           {position.status !== "blocked" && (
             <button
               onClick={handleSave}
-              disabled={!room.trim()}
+              disabled={!roomCode.trim() || !codeValid}
               className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-sky-600 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
             >
               <Save className="h-4 w-4" /> Salva

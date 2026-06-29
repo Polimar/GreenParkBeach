@@ -45,9 +45,6 @@ export function UmbrellaCell({ position, selected, highlighted, onClick }: Umbre
       <span className="text-[10px] font-bold leading-tight text-gray-800">
         {position.status === "blocked" ? "XX" : displayCode || "—"}
       </span>
-      {position.isGrande && (
-        <span className="text-[7px] font-semibold text-amber-700">GR</span>
-      )}
       <span className="absolute -right-2 top-1/2 -translate-y-1/2 text-[9px] font-medium text-gray-400">
         {position.id}
       </span>
