@@ -1,18 +1,15 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { createEmptyPositions, getInitialState } from "@/lib/seed-data";
-import { loadAppState, saveAppState } from "@/lib/persistence";
+import { apiFetch, canWrite } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth-context";
+import { createEmptyPositions } from "@/lib/seed-data";
 import {
   AppState,
   BookingPeriod,
   PeriodInput,
   UmbrellaPosition,
   ViciniGroup,
-  codeToPosition,
-  formatRoomCode,
-  getStatusFromCode,
-  migratePosition,
   normalizeRoomCode,
 } from "@/lib/types";
 
@@ -26,21 +23,27 @@ export interface BulkImportOptions {
   referenceImage?: string;
 }
 
+interface ServerStateResponse {
+  periods: BookingPeriod[];
+  activePeriod: BookingPeriod | undefined;
+  positions: UmbrellaPosition[];
+  viciniGroups: ViciniGroup[];
+  lastUpdated: string;
+}
+
 interface BeachContextValue {
   state: AppState;
   activePeriod: BookingPeriod | undefined;
-  assignUmbrella: (id: number, data: Partial<UmbrellaPosition>) => void;
-  clearUmbrella: (id: number) => void;
-  blockUmbrella: (id: number) => void;
-  updatePosition: (id: number, data: Partial<UmbrellaPosition>) => void;
-  applyBulkAssignments: (assignments: BulkAssignment[], options: BulkImportOptions) => void;
-  addViciniGroup: (positionIds: number[], label?: string) => void;
-  removeViciniGroup: (groupId: string) => void;
-  setActivePeriod: (periodId: string) => void;
-  addPeriod: (period: Omit<BookingPeriod, "id">) => void;
-  resetToSeed: () => void;
-  exportData: () => string;
-  importData: (json: string) => boolean;
+  loading: boolean;
+  error: string | null;
+  isReadOnly: boolean;
+  refresh: () => Promise<void>;
+  assignUmbrella: (id: number, data: Partial<UmbrellaPosition>) => Promise<void>;
+  clearUmbrella: (id: number) => Promise<void>;
+  blockUmbrella: (id: number) => Promise<void>;
+  applyBulkAssignments: (assignments: BulkAssignment[], options: BulkImportOptions) => Promise<void>;
+  setActivePeriod: (periodId: string) => Promise<void>;
+  addPeriod: (period: Omit<BookingPeriod, "id">) => Promise<void>;
   searchPositions: (query: string) => UmbrellaPosition[];
   getViciniForPosition: (id: number) => ViciniGroup | undefined;
   stats: {
@@ -54,96 +57,49 @@ interface BeachContextValue {
 
 const BeachContext = createContext<BeachContextValue | null>(null);
 
-function migrateState(parsed: AppState): AppState {
-  const positions = parsed.positions.map(migratePosition);
-  const snapshots = { ...parsed.periodSnapshots };
+const POLL_MS = 20_000;
 
-  for (const [id, snap] of Object.entries(snapshots)) {
-    snapshots[id] = { ...snap, positions: snap.positions.map(migratePosition) };
-  }
-
-  const activeId = parsed.periods?.find((p) => p.isActive)?.id ?? parsed.periods?.[0]?.id;
-  if (activeId && !snapshots[activeId]) {
-    snapshots[activeId] = { positions };
-  }
-
-  return { ...parsed, positions, periodSnapshots: snapshots };
-}
-
-function withActiveSnapshot(state: AppState, positions: UmbrellaPosition[]): AppState {
-  const activeId = state.periods.find((p) => p.isActive)?.id;
-  if (!activeId) return { ...state, positions };
-
+function toAppState(data: ServerStateResponse): AppState {
   return {
-    ...state,
-    positions,
-    periodSnapshots: {
-      ...state.periodSnapshots,
-      [activeId]: {
-        ...state.periodSnapshots?.[activeId],
-        positions,
-      },
-    },
+    positions: data.positions,
+    periods: data.periods,
+    viciniGroups: data.viciniGroups,
+    lastUpdated: data.lastUpdated,
   };
 }
 
-function applyAssignmentsToPositions(
-  base: UmbrellaPosition[],
-  assignments: BulkAssignment[],
-  startDate: string,
-  endDate: string
-): UmbrellaPosition[] {
-  const map = new Map(assignments.map((a) => [a.positionId, a.roomCode]));
-
-  return base.map((p) => {
-    if (!map.has(p.id)) return p;
-    const roomCode = map.get(p.id);
-    if (!roomCode) {
-      return {
-        ...p,
-        code: null,
-        status: "available" as const,
-        roomCode: undefined,
-        guestName: undefined,
-        startDate: undefined,
-        endDate: undefined,
-      };
-    }
-    if (roomCode === "XX") {
-      return { ...p, code: "XX", status: "blocked" as const, roomCode: undefined };
-    }
-    const normalized = normalizeRoomCode(roomCode);
-    return {
-      ...p,
-      code: normalized,
-      roomCode: normalized,
-      status: "assigned" as const,
-      startDate,
-      endDate,
-    };
-  });
-}
-
-function loadState(): AppState {
-  const initial = getInitialState();
-  if (typeof window === "undefined") return initial;
-  return migrateState(loadAppState(initial));
-}
-
 export function BeachProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AppState>(getInitialState);
-  const [hydrated, setHydrated] = useState(false);
+  const { isAuthenticated, role } = useAuth();
+  const [state, setState] = useState<AppState>({
+    positions: createEmptyPositions(),
+    periods: [],
+    viciniGroups: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setState(loadState());
-    setHydrated(true);
-  }, []);
+  const isReadOnly = !canWrite(role);
 
-  useEffect(() => {
-    if (hydrated) {
-      saveAppState(state);
+  const refresh = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const data = await apiFetch<ServerStateResponse>("/api/state");
+      setState(toAppState(data));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Errore di connessione");
+    } finally {
+      setLoading(false);
     }
-  }, [state, hydrated]);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    setLoading(true);
+    refresh();
+    const interval = setInterval(refresh, POLL_MS);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, refresh]);
 
   const activePeriod = useMemo(
     () => state.periods.find((p) => p.isActive) ?? state.periods[0],
@@ -159,207 +115,110 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
       assigned,
       available,
       blocked,
-      occupancyRate: Math.round((assigned / state.positions.length) * 100),
+      occupancyRate: state.positions.length ? Math.round((assigned / state.positions.length) * 100) : 0,
     };
   }, [state.positions]);
 
-  const updatePosition = useCallback((id: number, data: Partial<UmbrellaPosition>) => {
-    setState((prev) =>
-      withActiveSnapshot(prev, prev.positions.map((p) => (p.id === id ? { ...p, ...data } : p)))
-    );
-  }, []);
-
   const assignUmbrella = useCallback(
-    (id: number, data: Partial<UmbrellaPosition>) => {
-      const roomCode = data.roomCode
-        ? normalizeRoomCode(data.roomCode)
-        : data.code
-          ? normalizeRoomCode(data.code)
-          : undefined;
+    async (id: number, data: Partial<UmbrellaPosition>) => {
+      if (!activePeriod || isReadOnly) return;
+      const roomCode = data.roomCode ? normalizeRoomCode(data.roomCode) : undefined;
       if (!roomCode) return;
-      const parsed = codeToPosition(roomCode);
-      setState((prev) =>
-        withActiveSnapshot(
-          prev,
-          prev.positions.map((p) =>
-            p.id === id
-              ? {
-                  ...p,
-                  ...parsed,
-                  guestName: data.guestName,
-                  startDate: data.startDate ?? activePeriod?.startDate,
-                  endDate: data.endDate ?? activePeriod?.endDate,
-                  notes: data.notes,
-                }
-              : p
-          )
-        )
+      const updated = await apiFetch<ServerStateResponse>(
+        `/api/periods/${activePeriod.id}/assignments`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            positionId: id,
+            roomCode,
+            status: "assigned",
+            guestName: data.guestName,
+            notes: data.notes,
+          }),
+        }
       );
+      setState(toAppState(updated));
     },
-    [activePeriod]
+    [activePeriod, isReadOnly]
   );
 
-  const clearUmbrella = useCallback((id: number) => {
-    setState((prev) =>
-      withActiveSnapshot(
-        prev,
-        prev.positions.map((p) =>
-          p.id === id
-            ? {
-                ...p,
-                code: null,
-                status: "available" as const,
-                roomCode: undefined,
-                guestName: undefined,
-                startDate: undefined,
-                endDate: undefined,
-                notes: undefined,
-              }
-            : p
-        )
-      )
-    );
-  }, []);
-
-  const blockUmbrella = useCallback((id: number) => {
-    setState((prev) =>
-      withActiveSnapshot(
-        prev,
-        prev.positions.map((p) =>
-          p.id === id
-            ? { ...p, code: "XX", status: "blocked" as const, roomCode: undefined, guestName: undefined }
-            : p
-        )
-      )
-    );
-  }, []);
-
-  const applyBulkAssignments = useCallback((assignments: BulkAssignment[], options: BulkImportOptions) => {
-    setState((prev) => {
-      const activeId = prev.periods.find((p) => p.isActive)?.id;
-      const snapshots = { ...prev.periodSnapshots };
-
-      if (activeId) {
-        snapshots[activeId] = {
-          ...snapshots[activeId],
-          positions: prev.positions,
-        };
-      }
-
-      const newPeriodId = `p-${Date.now()}`;
-      const newPeriod: BookingPeriod = {
-        id: newPeriodId,
-        name: options.period.name.trim(),
-        startDate: options.period.startDate,
-        endDate: options.period.endDate,
-        isActive: true,
-      };
-
-      const newPositions = applyAssignmentsToPositions(
-        createEmptyPositions(),
-        assignments,
-        options.period.startDate,
-        options.period.endDate
+  const clearUmbrella = useCallback(
+    async (id: number) => {
+      if (!activePeriod || isReadOnly) return;
+      const updated = await apiFetch<ServerStateResponse>(
+        `/api/periods/${activePeriod.id}/assignments`,
+        { method: "PUT", body: JSON.stringify({ positionId: id, action: "clear" }) }
       );
+      setState(toAppState(updated));
+    },
+    [activePeriod, isReadOnly]
+  );
 
-      snapshots[newPeriodId] = {
-        positions: newPositions,
-        referenceImage: options.referenceImage,
-      };
+  const blockUmbrella = useCallback(
+    async (id: number) => {
+      if (!activePeriod || isReadOnly) return;
+      const updated = await apiFetch<ServerStateResponse>(
+        `/api/periods/${activePeriod.id}/assignments`,
+        { method: "PUT", body: JSON.stringify({ positionId: id, action: "block" }) }
+      );
+      setState(toAppState(updated));
+    },
+    [activePeriod, isReadOnly]
+  );
 
-      return {
-        ...prev,
-        periods: [...prev.periods.map((p) => ({ ...p, isActive: false })), newPeriod],
-        positions: newPositions,
-        periodSnapshots: snapshots,
-      };
-    });
-  }, []);
+  const applyBulkAssignments = useCallback(
+    async (assignments: BulkAssignment[], options: BulkImportOptions) => {
+      if (isReadOnly) return;
+      const updated = await apiFetch<ServerStateResponse>("/api/periods/import", {
+        method: "PUT",
+        body: JSON.stringify({
+          name: options.period.name,
+          startDate: options.period.startDate,
+          endDate: options.period.endDate,
+          assignments,
+        }),
+      });
+      setState(toAppState(updated));
+    },
+    [isReadOnly]
+  );
 
-  const addViciniGroup = useCallback((positionIds: number[], label?: string) => {
-    setState((prev) => ({
-      ...prev,
-      viciniGroups: [...prev.viciniGroups, { id: `v-${Date.now()}`, positionIds, label }],
-    }));
-  }, []);
-
-  const removeViciniGroup = useCallback((groupId: string) => {
-    setState((prev) => ({
-      ...prev,
-      viciniGroups: prev.viciniGroups.filter((g) => g.id !== groupId),
-    }));
-  }, []);
-
-  const setActivePeriod = useCallback((periodId: string) => {
-    setState((prev) => {
-      const currentActiveId = prev.periods.find((p) => p.isActive)?.id;
-      const snapshots = { ...prev.periodSnapshots };
-
-      if (currentActiveId && currentActiveId !== periodId) {
-        snapshots[currentActiveId] = {
-          ...snapshots[currentActiveId],
-          positions: prev.positions,
-        };
+  const setActivePeriod = useCallback(
+    async (periodId: string) => {
+      if (isReadOnly) {
+        const map = await apiFetch<{
+          period: BookingPeriod;
+          positions: UmbrellaPosition[];
+          viciniGroups: ViciniGroup[];
+        }>(`/api/periods/${periodId}`);
+        setState((prev) => ({
+          ...prev,
+          positions: map.positions,
+          viciniGroups: map.viciniGroups,
+          periods: prev.periods.map((p) => ({ ...p, isActive: p.id === periodId })),
+        }));
+        return;
       }
+      const updated = await apiFetch<ServerStateResponse>(`/api/periods/${periodId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "activate" }),
+      });
+      setState(toAppState(updated));
+    },
+    [isReadOnly]
+  );
 
-      const loaded =
-        snapshots[periodId]?.positions?.map((p) => ({ ...p })) ?? createEmptyPositions();
-
-      return {
-        ...prev,
-        periods: prev.periods.map((p) => ({ ...p, isActive: p.id === periodId })),
-        positions: loaded,
-        periodSnapshots: snapshots,
-      };
-    });
-  }, []);
-
-  const addPeriod = useCallback((period: Omit<BookingPeriod, "id">) => {
-    setState((prev) => {
-      const currentActiveId = prev.periods.find((p) => p.isActive)?.id;
-      const snapshots = { ...prev.periodSnapshots };
-
-      if (currentActiveId) {
-        snapshots[currentActiveId] = { ...snapshots[currentActiveId], positions: prev.positions };
-      }
-
-      const newId = `p-${Date.now()}`;
-      const empty = createEmptyPositions();
-
-      snapshots[newId] = { positions: empty };
-
-      return {
-        ...prev,
-        periods: [...prev.periods.map((p) => ({ ...p, isActive: false })), { ...period, id: newId, isActive: true }],
-        positions: empty,
-        periodSnapshots: snapshots,
-      };
-    });
-  }, []);
-
-  const resetToSeed = useCallback(() => {
-    const initial = getInitialState();
-    setState(initial);
-    saveAppState(initial);
-  }, []);
-
-  const exportData = useCallback(() => {
-    const exportable = { ...state };
-    delete exportable.referenceImage;
-    return JSON.stringify(exportable, null, 2);
-  }, [state]);
-
-  const importData = useCallback((json: string) => {
-    try {
-      const parsed = migrateState(JSON.parse(json) as AppState);
-      if (!parsed.positions?.length) return false;
-      setState(parsed);
-      saveAppState(parsed);
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
+  const addPeriod = useCallback(
+    async (period: Omit<BookingPeriod, "id">) => {
+      if (isReadOnly) return;
+      const res = await apiFetch<{ period: BookingPeriod; state: ServerStateResponse }>("/api/periods", {
+        method: "POST",
+        body: JSON.stringify(period),
+      });
+      setState(toAppState(res.state));
+    },
+    [isReadOnly]
+  );
 
   const searchPositions = useCallback(
     (query: string) => {
@@ -384,27 +243,26 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
   const value: BeachContextValue = {
     state,
     activePeriod,
+    loading,
+    error,
+    isReadOnly,
+    refresh,
     assignUmbrella,
     clearUmbrella,
     blockUmbrella,
-    updatePosition,
     applyBulkAssignments,
-    addViciniGroup,
-    removeViciniGroup,
     setActivePeriod,
     addPeriod,
-    resetToSeed,
-    exportData,
-    importData,
     searchPositions,
     getViciniForPosition,
     stats,
   };
 
-  if (!hydrated) {
+  if (loading && isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-sky-50">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-sky-50 p-6">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-sky-200 border-t-sky-600" />
+        <p className="mt-4 text-sm text-gray-500">Caricamento dati dal server...</p>
       </div>
     );
   }
@@ -417,5 +275,3 @@ export function useBeach() {
   if (!ctx) throw new Error("useBeach must be used within BeachProvider");
   return ctx;
 }
-
-export { getStatusFromCode, formatRoomCode };

@@ -28,6 +28,7 @@ export function PhotoImport() {
   const [periodName, setPeriodName] = useState("");
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
+  const [applying, setApplying] = useState(false);
 
   useEffect(() => {
     if (activePeriod && step === "idle") {
@@ -116,16 +117,23 @@ export function PhotoImport() {
     e.target.value = "";
   };
 
-  const handleApply = () => {
+  const handleApply = async () => {
     if (!periodValid) return;
-    applyBulkAssignments(
-      assignments.map((a) => ({ positionId: a.positionId, roomCode: a.roomCode })),
-      {
-        period: { name: periodName.trim(), startDate: periodStart, endDate: periodEnd },
-        referenceImage: imageData ?? undefined,
-      }
-    );
-    setStep("done");
+    setApplying(true);
+    try {
+      await applyBulkAssignments(
+        assignments.map((a) => ({ positionId: a.positionId, roomCode: a.roomCode })),
+        {
+          period: { name: periodName.trim(), startDate: periodStart, endDate: periodEnd },
+          referenceImage: imageData ?? undefined,
+        }
+      );
+      setStep("done");
+    } catch {
+      setWarnings(["Errore nel salvataggio sul server. Riprova."]);
+    } finally {
+      setApplying(false);
+    }
   };
 
   const handleReset = () => {
@@ -184,7 +192,7 @@ export function PhotoImport() {
         <p className="mt-2 text-xs text-red-500">Inserisci nome e date valide (fine ≥ inizio)</p>
       )}
       <p className="mt-2 text-xs text-gray-500">
-        Il periodo viene salvato in modo permanente. Ogni import crea un nuovo periodo nel calendario.
+        Il periodo viene salvato sul server e condiviso con il bagnino in spiaggia.
       </p>
     </div>
   );
@@ -325,11 +333,11 @@ export function PhotoImport() {
               <>
                 <button
                   onClick={handleApply}
-                  disabled={assignments.length === 0 || !periodValid}
+                  disabled={assignments.length === 0 || !periodValid || applying}
                   className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
                 >
                   <CheckCircle className="h-4 w-4" />
-                  Crea periodo e applica {assignments.length} assegnazioni
+                  {applying ? "Salvataggio..." : `Crea periodo e applica ${assignments.length} assegnazioni`}
                 </button>
                 <button
                   onClick={handleReset}
