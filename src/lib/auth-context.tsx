@@ -1,48 +1,62 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
-
-const AUTH_KEY = "greenpark-auth";
-const STAFF_PIN = "greenpark";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import {
+  loginWithApi,
+  logoutWithApi,
+  restoreAuthCredentials,
+  type StaffRole,
+} from "@/lib/api-client";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
-  login: (pin: string) => boolean;
-  logout: () => void;
+  role: StaffRole | null;
+  login: (pin: string) => Promise<boolean>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [role, setRole] = useState<StaffRole | null>(null);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    setIsAuthenticated(sessionStorage.getItem(AUTH_KEY) === "true");
+    const ok = restoreAuthCredentials();
+    if (ok) {
+      setIsAuthenticated(true);
+      setRole(getStoredRoleFromMemory());
+    }
     setChecked(true);
   }, []);
 
-  const login = (pin: string) => {
-    if (pin === STAFF_PIN) {
-      sessionStorage.setItem(AUTH_KEY, "true");
-      setIsAuthenticated(true);
-      return true;
-    }
-    return false;
-  };
+  const login = useCallback(async (pin: string) => {
+    const resolved = await loginWithApi(pin);
+    if (!resolved) return false;
+    setIsAuthenticated(true);
+    setRole(resolved);
+    return true;
+  }, []);
 
-  const logout = () => {
-    sessionStorage.removeItem(AUTH_KEY);
+  const logout = useCallback(async () => {
+    await logoutWithApi();
     setIsAuthenticated(false);
-  };
+    setRole(null);
+  }, []);
 
   if (!checked) return null;
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, role, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
+}
+
+function getStoredRoleFromMemory(): StaffRole | null {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem("greenpark-role") as StaffRole | null;
 }
 
 export function useAuth() {
@@ -50,3 +64,5 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }
+
+export type { StaffRole } from "@/lib/auth-pins";

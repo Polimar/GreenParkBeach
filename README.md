@@ -1,77 +1,37 @@
-# 🏖️ Green Park Beach - Umbrella Management System
+# Green Park Beach — Umbrella Management System
 
-Una web app moderna per la gestione intelligente dell'assegnazione degli ombrelloni alle camere di una struttura alberghiera.
+Web app per la gestione degli ombrelloni con **database server-side** (Vercel Postgres).
 
-## 📋 Descrizione
+## Accesso
 
-**Green Park Beach** è una soluzione completa per semplificare e automatizzare il processo di assegnazione degli ombrelloni ai clienti di hotel e resort. Permette al personale di gestire l'inventario, tracciare le assegnazioni e ottimizzare l'utilizzo delle risorse.
+| Ruolo | PIN | Permessi |
+|-------|-----|----------|
+| **Amministrativa** | `greenpark` | Inserisce dati, import foto, crea periodi |
+| **Bagnino** | `bagnino` | Consulta mappa e cerca camere in spiaggia |
 
-## ✨ Funzionalità Principali
+## Setup Database (Vercel)
 
-- 🎯 **Assegnazione Ombrelloni** - Assegna ombrelloni alle camere in modo rapido e intuitivo
-- 📊 **Dashboard** - Visualizza lo stato in tempo reale delle assegnazioni
-- 👥 **Gestione Ospiti** - Traccia quali ospiti hanno ombrelloni assegnati
-- 📅 **Calendario** - Gestisci disponibilità e periodi di occupazione
-- 🔗 **Gruppi Vicini** - Collega ombrelloni per ospiti che vogliono stare vicini
-- 🔍 **Ricerca** - Cerca per posizione, camera, blocco o nome ospite
-- 📤 **Export/Import** - Condividi i dati tra dispositivi via JSON
-- 🔐 **Autenticazione** - Accesso sicuro per il personale autorizzato (PIN)
+1. Vai su [Vercel Dashboard](https://vercel.com) → progetto `greenpark-beach`
+2. **Storage** → **Create Database** → **Postgres**
+3. Collega al progetto (variabili `POSTGRES_URL` vengono aggiunte automaticamente)
+4. Rideploya l'app
+5. Chiama `POST /api/init` per inizializzare i dati seed (o avviene automaticamente al primo accesso)
 
-## 🚀 Quick Start
-
-### Prerequisiti
-
-- Node.js (v18+)
-- npm
-
-### Installazione
+## Sviluppo locale
 
 ```bash
-git clone https://github.com/polimar/greenparkbeach.git
-cd greenparkbeach
 npm install
+# Imposta POSTGRES_URL nel file .env.local
 npm run dev
 ```
 
-Apri [http://localhost:3000](http://localhost:3000) — PIN di accesso: `greenpark`
+## Architettura
 
-## 📁 Struttura del Progetto
+- **Frontend**: Next.js 15, mobile-first con bottom navigation
+- **API**: `/api/state`, `/api/periods`, `/api/periods/import`
+- **Database**: Vercel Postgres (periodi + assegnazioni)
+- **Sync**: aggiornamento automatico ogni 20 secondi
 
-```
-greenparkbeach/
-├── src/
-│   ├── app/           # Next.js App Router
-│   ├── components/    # Componenti React UI
-│   └── lib/           # Tipi, contesto, dati seed
-├── public/
-├── package.json
-└── README.md
-```
+## Deploy
 
-## 🛠️ Stack Tecnologico
-
-- **Frontend**: Next.js 15, React 19, TypeScript
-- **Styling**: Tailwind CSS 4
-- **Icone**: Lucide React
-- **Persistenza**: localStorage (browser) + export/import JSON
-- **Deployment**: Vercel
-
-## 🗺️ Layout Spiaggia
-
-La mappa replica il foglio cartaceo con **8 file** (1°–8° FILA) e **107 posizioni** totali. Ogni ombrellone può essere:
-
-| Stato | Descrizione |
-|-------|-------------|
-| Libero | Posizione disponibile |
-| Assegnato | Camera + blocco (es. `116 V`, `305GR`) |
-| Bloccato | Marcato come `XX` |
-
-I dati iniziali corrispondono al periodo **27/06 – 04/07/2026**.
-
-## 📄 Licenza
-
-Vedi [LICENSE.md](LICENSE.md)
-
----
-
-**Green Park Beach** - Gestisci gli ombrelloni, offri il meglio ai tuoi ospiti 🌊
+https://greenpark-beach-valerios-projects-07f3aa00.vercel.app

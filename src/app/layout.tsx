@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -9,6 +9,15 @@ export const metadata: Metadata = {
   title: "Green Park Beach — Gestione Ombrelloni",
   description: "Sistema di gestione intelligente per l'assegnazione degli ombrelloni alle camere",
   icons: { icon: "/favicon.ico" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Green Park Beach" },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0284c7",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

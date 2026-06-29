@@ -10,15 +10,36 @@ const DEFAULT_PERIOD: BookingPeriod = {
 
 // Dati dal foglio "BOOKING SPIAGGIA LUGLIO 2026 DAL 27/06 AL 04/07"
 const ROW_DATA: Record<number, (string | null)[]> = {
-  1: ["116 V", "117 V", "104 B", "XX", "217 C", "133 E", null, null, null, null, null, null, null, null, null],
-  2: ["123 D", "124 D", "235 F", "236 F", "226 D", "109 B", "122 D", "243 G", "108 B", "134 F", "202 A", "309GR", "204 B", null, null],
+  1: ["116", "117", "104 B", "XX", null, null, null, null, null, null, "217 C", "133 E", null, null, null],
+  2: ["123 D", "124 D", "235 F", "236 F", "226 D", null, "109 B", "122 D", "243 G", "108 B", "134 F", "202 A", "309GR", "204 B", null],
   3: ["230 E", "305GR", "241 G", "240 G", "301GR", "105 B", "306GR", "239 G", "126 D", "129 E", "244 G", "145 G", "118GR", "205 B", "207 B"],
   4: ["228 E", "234 F", "123 D", "312GR", "210 C", "107 B", "321GR", "335GR", "139 G", "308GR", "209 B", "127 D", "142 G", "334GR", "135 F"],
   5: ["138 G", "102 A", "103 A", "212 C", "137 G", "302GR", "213 C", "119GR", "131 E", "144 G", "143 G", "215 C", "132 E", "314GR", "336GR"],
   6: ["237 G", "106 B", "110 C", "238 G", "141 G", "140 G", "101 A", "242 G", "130 E", "231 E", "216 C", "128 E"],
   7: ["208 B", "112 C", "111 C", "221 D", "220 D", "115 C", "337GR", "201 A", "303GR", "313GR"],
-  8: ["229 E", "113 C", "304GR", "214 C", "206 B", "232 E", "120 D", "233 E", "203 A", null],
+  8: ["229 E", "113 C", "304GR", "214 C", "206 B", "232 E", null, "120 D", "233 E", "203 A"],
 };
+
+export function createEmptyPositions(): UmbrellaPosition[] {
+  const positions: UmbrellaPosition[] = [];
+  let globalId = 1;
+
+  for (let row = 1; row <= 8; row++) {
+    const count = ROW_DATA[row].length;
+    for (let idx = 0; idx < count; idx++) {
+      positions.push({
+        id: globalId,
+        row,
+        positionInRow: idx + 1,
+        code: null,
+        status: "available",
+      });
+      globalId++;
+    }
+  }
+
+  return positions;
+}
 
 function buildPositions(): UmbrellaPosition[] {
   const positions: UmbrellaPosition[] = [];
@@ -34,9 +55,7 @@ function buildPositions(): UmbrellaPosition[] {
         positionInRow: idx + 1,
         code: base.code ?? null,
         status: base.status ?? "available",
-        room: base.room,
-        block: base.block,
-        isGrande: base.isGrande,
+        roomCode: base.roomCode,
         startDate: code && code !== "XX" ? DEFAULT_PERIOD.startDate : undefined,
         endDate: code && code !== "XX" ? DEFAULT_PERIOD.endDate : undefined,
       });
@@ -47,7 +66,6 @@ function buildPositions(): UmbrellaPosition[] {
   return positions;
 }
 
-// Gruppi VICINI ricostruiti dal foglio (coppie/gruppi adiacenti)
 const VICINI_GROUPS: ViciniGroup[] = [
   { id: "v1", positionIds: [1, 2], label: "116-117" },
   { id: "v2", positionIds: [16, 17], label: "123-124" },
@@ -63,10 +81,12 @@ const VICINI_GROUPS: ViciniGroup[] = [
 ];
 
 export function getInitialState(): AppState {
+  const positions = buildPositions();
   return {
-    positions: buildPositions(),
+    positions,
     viciniGroups: VICINI_GROUPS,
     periods: [DEFAULT_PERIOD],
+    periodSnapshots: { [DEFAULT_PERIOD.id]: { positions } },
     lastUpdated: new Date().toISOString(),
   };
 }

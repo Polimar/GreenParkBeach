@@ -1,6 +1,7 @@
 "use client";
 
 import { useBeach } from "@/lib/beach-context";
+import { getRoomSuffix } from "@/lib/types";
 import { Umbrella, CheckCircle, Circle, Ban, TrendingUp, Users } from "lucide-react";
 
 export function Dashboard() {
@@ -15,15 +16,17 @@ export function Dashboard() {
     { label: "Gruppi Vicini", value: state.viciniGroups.length, icon: Users, color: "text-indigo-600 bg-indigo-50" },
   ];
 
-  const byBlock = state.positions
-    .filter((p) => p.status === "assigned" && p.block)
+  const bySuffix = state.positions
+    .filter((p) => p.status === "assigned" && p.roomCode)
     .reduce<Record<string, number>>((acc, p) => {
-      const b = p.block!;
-      acc[b] = (acc[b] || 0) + 1;
+      const suffix = getRoomSuffix(p.roomCode!) ?? "—";
+      acc[suffix] = (acc[suffix] || 0) + 1;
       return acc;
     }, {});
 
-  const grandeCount = state.positions.filter((p) => p.isGrande && p.status === "assigned").length;
+  const grRooms = state.positions.filter(
+    (p) => p.status === "assigned" && p.roomCode?.toUpperCase().endsWith("GR")
+  ).length;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -52,16 +55,16 @@ export function Dashboard() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl bg-white p-5 shadow-sm">
-          <h3 className="mb-3 font-semibold text-gray-800">Distribuzione per Blocco</h3>
-          {Object.keys(byBlock).length === 0 ? (
+          <h3 className="mb-3 font-semibold text-gray-800">Distribuzione per Suffisso Camera</h3>
+          {Object.keys(bySuffix).length === 0 ? (
             <p className="text-sm text-gray-400">Nessun dato</p>
           ) : (
             <div className="space-y-2">
-              {Object.entries(byBlock)
+              {Object.entries(bySuffix)
                 .sort(([, a], [, b]) => b - a)
-                .map(([block, count]) => (
-                  <div key={block} className="flex items-center gap-2">
-                    <span className="w-8 text-sm font-medium text-gray-600">{block}</span>
+                .map(([suffix, count]) => (
+                  <div key={suffix} className="flex items-center gap-2">
+                    <span className="w-10 text-sm font-medium text-gray-600">{suffix}</span>
                     <div className="h-3 flex-1 overflow-hidden rounded-full bg-gray-100">
                       <div
                         className="h-full rounded-full bg-sky-500"
@@ -78,7 +81,7 @@ export function Dashboard() {
         <div className="rounded-xl bg-white p-5 shadow-sm">
           <h3 className="mb-3 font-semibold text-gray-800">Riepilogo</h3>
           <ul className="space-y-2 text-sm text-gray-600">
-            <li>Ombrelloni Grandi (GR): <strong>{grandeCount}</strong></li>
+            <li>Camere con suffisso GR: <strong>{grRooms}</strong></li>
             <li>Posti liberi: <strong>{stats.available}</strong></li>
             <li>Ultimo aggiornamento:{" "}
               <strong>

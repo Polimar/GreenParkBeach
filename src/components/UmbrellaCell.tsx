@@ -8,16 +8,24 @@ import { Users } from "lucide-react";
 interface UmbrellaCellProps {
   position: UmbrellaPosition;
   selected?: boolean;
-  highlighted?: boolean;
+  searchHighlighted?: boolean;
+  compact?: boolean;
   onClick: () => void;
 }
 
-export function UmbrellaCell({ position, selected, highlighted, onClick }: UmbrellaCellProps) {
+export function UmbrellaCell({
+  position,
+  selected,
+  searchHighlighted,
+  compact,
+  onClick,
+}: UmbrellaCellProps) {
   const { getViciniForPosition } = useBeach();
   const vicini = getViciniForPosition(position.id);
 
-  const bgColor =
-    position.status === "assigned"
+  const bgColor = searchHighlighted
+    ? "bg-emerald-200 border-emerald-500"
+    : position.status === "assigned"
       ? "bg-amber-100 border-amber-300"
       : position.status === "blocked"
         ? "bg-red-100 border-red-300"
@@ -27,29 +35,28 @@ export function UmbrellaCell({ position, selected, highlighted, onClick }: Umbre
 
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
-        "umbrella-cell relative flex min-h-[52px] w-full flex-col items-center justify-center rounded-md border-2 p-1 text-center",
+        "umbrella-cell relative flex w-full flex-col items-center justify-center rounded-lg border-2 text-center active:scale-95",
+        compact ? "min-h-[56px] p-1" : "min-h-[48px] p-1",
         bgColor,
-        selected && "selected ring-2 ring-sky-600",
-        highlighted && "ring-2 ring-yellow-400",
-        position.status === "blocked" && "opacity-70"
+        searchHighlighted && "z-10 scale-105 shadow-lg shadow-emerald-300/50 ring-2 ring-emerald-500 ring-offset-2",
+        selected && !searchHighlighted && "ring-2 ring-sky-600 ring-offset-1",
+        position.status === "blocked" && !searchHighlighted && "opacity-70"
       )}
-      title={`Posizione ${position.id} — ${displayCode || "Libero"}`}
+      title={`#${position.id} — ${displayCode || "Libero"}`}
     >
       {vicini && (
-        <span className="absolute -left-1 top-1/2 -translate-y-1/2 rounded bg-purple-500 px-0.5 text-[7px] font-bold text-white">
-          <Users className="h-2.5 w-2.5" />
+        <span className="absolute left-0.5 top-0.5 rounded-full bg-purple-500 p-0.5">
+          <Users className="h-2 w-2 text-white" />
         </span>
       )}
-      <span className="text-[10px] font-bold leading-tight text-gray-800">
+      <span className={cn("font-bold leading-tight text-gray-800", compact ? "text-[11px]" : "text-[10px]")}>
         {position.status === "blocked" ? "XX" : displayCode || "—"}
       </span>
-      {position.isGrande && (
-        <span className="text-[7px] font-semibold text-amber-700">GR</span>
-      )}
-      <span className="absolute -right-2 top-1/2 -translate-y-1/2 text-[9px] font-medium text-gray-400">
-        {position.id}
+      <span className={cn("font-medium text-gray-400", compact ? "text-[9px]" : "text-[8px]")}>
+        #{position.id}
       </span>
     </button>
   );

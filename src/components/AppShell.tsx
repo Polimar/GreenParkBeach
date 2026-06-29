@@ -5,124 +5,145 @@ import {
   LayoutDashboard,
   Grid3X3,
   Calendar,
-  Users,
+  Settings,
   LogOut,
   Umbrella,
-  Bell,
+  RefreshCw,
+  Shield,
+  Waves,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useBeach } from "@/lib/beach-context";
 import { Dashboard } from "./Dashboard";
 import { BeachGrid } from "./BeachGrid";
 import { AssignmentModal } from "./AssignmentModal";
-import { SearchPanel } from "./SearchPanel";
 import { CalendarView } from "./CalendarView";
-import { ViciniPanel } from "./ViciniPanel";
-import { DataManagement } from "./DataManagement";
+import { PhotoImport } from "./PhotoImport";
 import { UmbrellaPosition } from "@/lib/types";
 
-type Tab = "dashboard" | "grid" | "calendar" | "vicini" | "settings";
+type Tab = "dashboard" | "grid" | "calendar" | "settings";
 
-const TABS: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+const MOBILE_TABS: { id: Tab; label: string; icon: typeof Grid3X3 }[] = [
   { id: "grid", label: "Mappa", icon: Grid3X3 },
-  { id: "calendar", label: "Calendario", icon: Calendar },
-  { id: "vicini", label: "Vicini", icon: Users },
-  { id: "settings", label: "Impostazioni", icon: Bell },
+  { id: "dashboard", label: "Stats", icon: LayoutDashboard },
+  { id: "calendar", label: "Periodi", icon: Calendar },
 ];
 
 export function AppShell() {
   const { logout } = useAuth();
-  const { stats } = useBeach();
+  const { stats, activePeriod, refresh, error, isReadOnly, loading } = useBeach();
   const [tab, setTab] = useState<Tab>("grid");
   const [selected, setSelected] = useState<UmbrellaPosition | null>(null);
-  const [highlightedIds, setHighlightedIds] = useState<number[]>([]);
+  const [searchHighlightId, setSearchHighlightId] = useState<number | undefined>();
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleSelect = (pos: UmbrellaPosition) => {
     setSelected(pos);
-    setHighlightedIds([pos.id]);
   };
 
   const handleSearchSelect = (pos: UmbrellaPosition) => {
-    setTab("grid");
-    handleSelect(pos);
+    setSearchHighlightId(pos.id);
+    setSelected(null);
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  };
+
+  const tabs = isReadOnly
+    ? MOBILE_TABS
+    : [...MOBILE_TABS, { id: "settings" as Tab, label: "Admin", icon: Settings }];
+
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-sky-200/60 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-600">
-              <Umbrella className="h-5 w-5 text-white" />
+    <div className="flex min-h-[100dvh] flex-col bg-gradient-to-b from-sky-50 to-amber-50/30">
+      <header className="sticky top-0 z-40 border-b border-sky-200/60 bg-white/95 backdrop-blur-md safe-top">
+        <div className="flex items-center justify-between gap-2 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-600">
+              <Umbrella className="h-4 w-4 text-white" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-sky-900">Green Park Beach</h1>
-              <p className="text-xs text-gray-500">
-                {stats.assigned}/{stats.total} assegnati — {stats.occupancyRate}% occupazione
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold text-sky-900">Green Park Beach</h1>
+              <p className="truncate text-[11px] text-gray-500">
+                {stats.assigned}/{stats.total} · {stats.occupancyRate}%
+                {activePeriod && ` · ${activePeriod.name}`}
               </p>
             </div>
           </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-100"
-          >
-            <LogOut className="h-4 w-4" /> Esci
-          </button>
-        </div>
-
-        <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 pb-2">
-          {TABS.map((t) => (
+          <div className="flex shrink-0 items-center gap-1">
+            <span className={`hidden items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium sm:flex ${
+              isReadOnly ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
+            }`}>
+              {isReadOnly ? <Waves className="h-3 w-3" /> : <Shield className="h-3 w-3" />}
+              {isReadOnly ? "Bagnino" : "Admin"}
+            </span>
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${
-                tab === t.id
-                  ? "bg-sky-600 text-white shadow-sm"
-                  : "text-gray-600 hover:bg-sky-50"
-              }`}
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className="rounded-lg p-2 text-gray-500 active:bg-gray-100"
+              aria-label="Aggiorna"
             >
-              <t.icon className="h-4 w-4" />
-              {t.label}
+              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             </button>
-          ))}
-        </nav>
+            <button
+              type="button"
+              onClick={logout}
+              className="rounded-lg p-2 text-gray-500 active:bg-gray-100"
+              aria-label="Esci"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        {error && (
+          <div className="bg-red-50 px-3 py-1.5 text-center text-xs text-red-600">{error}</div>
+        )}
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="flex-1 overflow-y-auto px-3 py-3 pb-20">
         {tab === "dashboard" && <Dashboard />}
         {tab === "grid" && (
-          <div className="space-y-4">
-            <SearchPanel onSelect={handleSearchSelect} />
-            <BeachGrid
-              selectedId={selected?.id}
-              highlightedIds={highlightedIds}
-              onSelect={handleSelect}
-            />
-          </div>
+          <BeachGrid
+            selectedId={selected?.id}
+            searchHighlightId={searchHighlightId}
+            onSelect={handleSelect}
+            onSearchSelect={handleSearchSelect}
+          />
         )}
         {tab === "calendar" && <CalendarView />}
-        {tab === "vicini" && <ViciniPanel />}
-        {tab === "settings" && (
+        {tab === "settings" && !isReadOnly && (
           <div className="space-y-4">
-            <DataManagement />
-            <div className="rounded-xl bg-white p-5 shadow-sm">
-              <h3 className="mb-2 font-semibold text-gray-800">Informazioni</h3>
-              <p className="text-sm text-gray-500">
-                Green Park Beach — Umbrella Management System v1.0
-              </p>
-              <p className="mt-2 text-sm text-gray-500">
-                PIN di accesso staff: <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">greenpark</code>
-              </p>
-              <p className="mt-2 text-sm text-gray-500">
-                I dati vengono salvati automaticamente nel browser. Usa Esporta/Importa JSON per condividere i dati tra dispositivi.
-              </p>
+            <PhotoImport />
+            <div className="rounded-xl bg-white p-4 text-sm text-gray-500 shadow-sm">
+              <p>I dati sono salvati sul server e condivisi tra ufficio e spiaggia.</p>
+              <p className="mt-2">Si aggiornano automaticamente ogni 20 secondi.</p>
             </div>
           </div>
         )}
       </main>
 
-      <AssignmentModal position={selected} onClose={() => setSelected(null)} />
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white/95 backdrop-blur-md safe-bottom">
+        <div className="flex items-stretch justify-around">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition active:scale-95 ${
+                tab === t.id ? "text-sky-600" : "text-gray-400"
+              }`}
+            >
+              <t.icon className={`h-5 w-5 ${tab === t.id ? "text-sky-600" : ""}`} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <AssignmentModal position={selected} onClose={() => setSelected(null)} readOnly={isReadOnly} />
     </div>
   );
 }
