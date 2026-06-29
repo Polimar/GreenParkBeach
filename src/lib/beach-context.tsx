@@ -69,7 +69,7 @@ function toAppState(data: ServerStateResponse): AppState {
 }
 
 export function BeachProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, role } = useAuth();
+  const { isAuthenticated, role, logout } = useAuth();
   const [state, setState] = useState<AppState>({
     positions: createEmptyPositions(),
     periods: [],
@@ -87,11 +87,15 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
       setState(toAppState(data));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Errore di connessione");
+      const message = err instanceof Error ? err.message : "Errore di connessione";
+      setError(message);
+      if (message.includes("autorizzato") || message.includes("401")) {
+        await logout();
+      }
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, logout]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
