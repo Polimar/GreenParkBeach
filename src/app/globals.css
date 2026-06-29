@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --color-beach-sand: #f5e6c8;
+  --color-beach-sea: #0ea5e9;
+  --color-beach-sea-dark: #0369a1;
+  --color-beach-palm: #16a34a;
+  --color-umbrella-assigned: #fef3c7;
+  --color-umbrella-available: #ecfdf5;
+  --color-umbrella-blocked: #fee2e2;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 40%, #fefce8 100%);
+  min-height: 100vh;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+.umbrella-cell {
+  transition: all 0.15s ease;
+}
+
+.umbrella-cell:hover {
+  transform: scale(1.04);
+  z-index: 10;
+}
+
+.umbrella-cell.selected {
+  ring: 2px;
+  ring-color: #0369a1;
+  box-shadow: 0 0 0 3px rgba(3, 105, 161, 0.4);
+}
+
+.vicini-badge {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
