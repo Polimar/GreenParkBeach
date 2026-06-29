@@ -40,7 +40,7 @@ async function toSquare(image) {
   });
 }
 
-async function composeIcon(squareImage, size, paddingRatio) {
+async function composeIcon(squareImage, size, paddingRatio, background = { r: 0, g: 0, b: 0, alpha: 0 }) {
   const inner = Math.round(size * (1 - paddingRatio * 2));
   const resized = await squareImage
     .clone()
@@ -56,13 +56,16 @@ async function composeIcon(squareImage, size, paddingRatio) {
       width: size,
       height: size,
       channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
+      background,
     },
   }).composite([{ input: resized, gravity: "center" }]);
 }
 
-async function writeIcon(squareImage, filename, size, paddingRatio) {
-  const icon = await composeIcon(squareImage, size, paddingRatio);
+const WHITE_BG = { r: 255, g: 255, b: 255, alpha: 1 };
+const BRAND_BG = { r: 22, g: 101, b: 52, alpha: 1 }; // #166534
+
+async function writeIcon(squareImage, filename, size, paddingRatio, background) {
+  const icon = await composeIcon(squareImage, size, paddingRatio, background);
   await icon.png().toFile(path.join(OUT, filename));
   console.log(`  ${filename} (${size}x${size}, padding ${Math.round(paddingRatio * 100)}%)`);
 }
@@ -83,24 +86,24 @@ async function main() {
     })
     .toFile(path.join(OUT, "../logo-gpv.png"));
 
-  console.log("Icone Android (standard):");
-  await writeIcon(square, "icon-192.png", 192, 0.06);
-  await writeIcon(square, "icon-512.png", 512, 0.06);
+  console.log("Icone Android (standard, sfondo bianco):");
+  await writeIcon(square, "icon-192.png", 192, 0.06, WHITE_BG);
+  await writeIcon(square, "icon-512.png", 512, 0.06, WHITE_BG);
 
-  console.log("Icone Android (maskable):");
-  await writeIcon(square, "icon-192-maskable.png", 192, 0.18);
-  await writeIcon(square, "icon-512-maskable.png", 512, 0.18);
+  console.log("Icone Android (maskable, sfondo brand):");
+  await writeIcon(square, "icon-192-maskable.png", 192, 0.18, BRAND_BG);
+  await writeIcon(square, "icon-512-maskable.png", 512, 0.18, BRAND_BG);
 
-  console.log("Icone iOS:");
-  await writeIcon(square, "apple-touch-icon.png", 180, 0.08);
-  await writeIcon(square, "apple-touch-icon-152.png", 152, 0.08);
-  await writeIcon(square, "apple-touch-icon-167.png", 167, 0.08);
+  console.log("Icone iOS (sfondo bianco):");
+  await writeIcon(square, "apple-touch-icon.png", 180, 0.08, WHITE_BG);
+  await writeIcon(square, "apple-touch-icon-152.png", 152, 0.08, WHITE_BG);
+  await writeIcon(square, "apple-touch-icon-167.png", 167, 0.08, WHITE_BG);
 
   console.log("Favicon:");
-  await writeIcon(square, "favicon-32.png", 32, 0.06);
-  await writeIcon(square, "favicon-16.png", 16, 0.04);
+  await writeIcon(square, "favicon-32.png", 32, 0.06, WHITE_BG);
+  await writeIcon(square, "favicon-16.png", 16, 0.04, WHITE_BG);
 
-  const favicon32 = await composeIcon(square, 32, 0.06);
+  const favicon32 = await composeIcon(square, 32, 0.06, WHITE_BG);
   await favicon32.png().toFile(path.join(OUT, "../favicon.ico"));
 
   console.log("Fatto.");

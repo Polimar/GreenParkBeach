@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    id: "/",
     name: "Green Park Beach — Gestione Ombrelloni",
     short_name: "GP Beach",
     description:
