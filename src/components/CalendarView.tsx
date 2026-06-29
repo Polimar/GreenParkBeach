@@ -65,12 +65,15 @@ export function CalendarView() {
 
       <div className="grid gap-3 md:grid-cols-2">
         {state.periods.map((period) => {
-          const assignedInPeriod = state.positions.filter(
-            (p) =>
-              p.status === "assigned" &&
-              p.startDate === period.startDate &&
-              p.endDate === period.endDate
-          ).length;
+          const snapshot = state.periodSnapshots?.[period.id];
+          const assignedInPeriod = snapshot
+            ? snapshot.positions.filter((p) => p.status === "assigned" || p.status === "blocked").length
+            : state.positions.filter(
+                (p) =>
+                  p.status === "assigned" &&
+                  p.startDate === period.startDate &&
+                  p.endDate === period.endDate
+              ).length;
 
           return (
             <button

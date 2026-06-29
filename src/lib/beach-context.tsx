@@ -1,10 +1,12 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { getInitialState } from "@/lib/seed-data";
+import { createEmptyPositions, getInitialState } from "@/lib/seed-data";
+import { loadAppState, saveAppState } from "@/lib/persistence";
 import {
   AppState,
   BookingPeriod,
+  PeriodInput,
   UmbrellaPosition,
   ViciniGroup,
   codeToPosition,
@@ -14,12 +16,14 @@ import {
   normalizeRoomCode,
 } from "@/lib/types";
 
-const STORAGE_KEY = "greenpark-beach-state";
-const STORAGE_VERSION = 2;
-
 interface BulkAssignment {
   positionId: number;
   roomCode: string | null;
+}
+
+export interface BulkImportOptions {
+  period: PeriodInput;
+  referenceImage?: string;
 }
 
 interface BeachContextValue {
@@ -29,7 +33,7 @@ interface BeachContextValue {
   clearUmbrella: (id: number) => void;
   blockUmbrella: (id: number) => void;
   updatePosition: (id: number, data: Partial<UmbrellaPosition>) => void;
-  applyBulkAssignments: (assignments: BulkAssignment[], referenceImage?: string) => void;
+  applyBulkAssignments: (assignments: BulkAssignment[], options: BulkImportOptions) => void;
   addViciniGroup: (positionIds: number[], label?: string) => void;
   removeViciniGroup: (groupId: string) => void;
   setActivePeriod: (periodId: string) => void;
@@ -51,30 +55,79 @@ interface BeachContextValue {
 const BeachContext = createContext<BeachContextValue | null>(null);
 
 function migrateState(parsed: AppState): AppState {
+  const positions = parsed.positions.map(migratePosition);
+  const snapshots = { ...parsed.periodSnapshots };
+
+  for (const [id, snap] of Object.entries(snapshots)) {
+    snapshots[id] = { ...snap, positions: snap.positions.map(migratePosition) };
+  }
+
+  const activeId = parsed.periods?.find((p) => p.isActive)?.id ?? parsed.periods?.[0]?.id;
+  if (activeId && !snapshots[activeId]) {
+    snapshots[activeId] = { positions };
+  }
+
+  return { ...parsed, positions, periodSnapshots: snapshots };
+}
+
+function withActiveSnapshot(state: AppState, positions: UmbrellaPosition[]): AppState {
+  const activeId = state.periods.find((p) => p.isActive)?.id;
+  if (!activeId) return { ...state, positions };
+
   return {
-    ...parsed,
-    positions: parsed.positions.map(migratePosition),
+    ...state,
+    positions,
+    periodSnapshots: {
+      ...state.periodSnapshots,
+      [activeId]: {
+        ...state.periodSnapshots?.[activeId],
+        positions,
+      },
+    },
   };
 }
 
-function loadState(): AppState {
-  if (typeof window === "undefined") return getInitialState();
-  try {
-    const version = localStorage.getItem(`${STORAGE_KEY}-version`);
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored) as AppState;
-      if (parsed.positions?.length === 107) {
-        if (version !== String(STORAGE_VERSION)) {
-          return migrateState(parsed);
-        }
-        return migrateState(parsed);
-      }
+function applyAssignmentsToPositions(
+  base: UmbrellaPosition[],
+  assignments: BulkAssignment[],
+  startDate: string,
+  endDate: string
+): UmbrellaPosition[] {
+  const map = new Map(assignments.map((a) => [a.positionId, a.roomCode]));
+
+  return base.map((p) => {
+    if (!map.has(p.id)) return p;
+    const roomCode = map.get(p.id);
+    if (!roomCode) {
+      return {
+        ...p,
+        code: null,
+        status: "available" as const,
+        roomCode: undefined,
+        guestName: undefined,
+        startDate: undefined,
+        endDate: undefined,
+      };
     }
-  } catch {
-    // ignore
-  }
-  return getInitialState();
+    if (roomCode === "XX") {
+      return { ...p, code: "XX", status: "blocked" as const, roomCode: undefined };
+    }
+    const normalized = normalizeRoomCode(roomCode);
+    return {
+      ...p,
+      code: normalized,
+      roomCode: normalized,
+      status: "assigned" as const,
+      startDate,
+      endDate,
+    };
+  });
+}
+
+function loadState(): AppState {
+  const initial = getInitialState();
+  if (typeof window === "undefined") return initial;
+  return migrateState(loadAppState(initial));
 }
 
 export function BeachProvider({ children }: { children: React.ReactNode }) {
@@ -88,8 +141,7 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (hydrated) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, lastUpdated: new Date().toISOString() }));
-      localStorage.setItem(`${STORAGE_KEY}-version`, String(STORAGE_VERSION));
+      saveAppState(state);
     }
   }, [state, hydrated]);
 
@@ -112,10 +164,9 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
   }, [state.positions]);
 
   const updatePosition = useCallback((id: number, data: Partial<UmbrellaPosition>) => {
-    setState((prev) => ({
-      ...prev,
-      positions: prev.positions.map((p) => (p.id === id ? { ...p, ...data } : p)),
-    }));
+    setState((prev) =>
+      withActiveSnapshot(prev, prev.positions.map((p) => (p.id === id ? { ...p, ...data } : p)))
+    );
   }, []);
 
   const assignUmbrella = useCallback(
@@ -127,56 +178,34 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
           : undefined;
       if (!roomCode) return;
       const parsed = codeToPosition(roomCode);
-      updatePosition(id, {
-        ...parsed,
-        guestName: data.guestName,
-        startDate: data.startDate ?? activePeriod?.startDate,
-        endDate: data.endDate ?? activePeriod?.endDate,
-        notes: data.notes,
-      });
+      setState((prev) =>
+        withActiveSnapshot(
+          prev,
+          prev.positions.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  ...parsed,
+                  guestName: data.guestName,
+                  startDate: data.startDate ?? activePeriod?.startDate,
+                  endDate: data.endDate ?? activePeriod?.endDate,
+                  notes: data.notes,
+                }
+              : p
+          )
+        )
+      );
     },
-    [updatePosition, activePeriod]
+    [activePeriod]
   );
 
-  const clearUmbrella = useCallback(
-    (id: number) => {
-      updatePosition(id, {
-        code: null,
-        status: "available",
-        roomCode: undefined,
-        guestName: undefined,
-        startDate: undefined,
-        endDate: undefined,
-        notes: undefined,
-      });
-    },
-    [updatePosition]
-  );
-
-  const blockUmbrella = useCallback(
-    (id: number) => {
-      updatePosition(id, {
-        code: "XX",
-        status: "blocked",
-        roomCode: undefined,
-        guestName: undefined,
-      });
-    },
-    [updatePosition]
-  );
-
-  const applyBulkAssignments = useCallback(
-    (assignments: BulkAssignment[], referenceImage?: string) => {
-      setState((prev) => {
-        const map = new Map(assignments.map((a) => [a.positionId, a.roomCode]));
-        return {
-          ...prev,
-          referenceImage: referenceImage ?? prev.referenceImage,
-          positions: prev.positions.map((p) => {
-            if (!map.has(p.id)) return p;
-            const roomCode = map.get(p.id);
-            if (!roomCode) {
-              return {
+  const clearUmbrella = useCallback((id: number) => {
+    setState((prev) =>
+      withActiveSnapshot(
+        prev,
+        prev.positions.map((p) =>
+          p.id === id
+            ? {
                 ...p,
                 code: null,
                 status: "available" as const,
@@ -184,34 +213,73 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
                 guestName: undefined,
                 startDate: undefined,
                 endDate: undefined,
-              };
-            }
-            if (roomCode === "XX") {
-              return { ...p, code: "XX", status: "blocked" as const, roomCode: undefined };
-            }
-            const normalized = normalizeRoomCode(roomCode);
-            return {
-              ...p,
-              code: normalized,
-              roomCode: normalized,
-              status: "assigned" as const,
-              startDate: activePeriod?.startDate,
-              endDate: activePeriod?.endDate,
-            };
-          }),
+                notes: undefined,
+              }
+            : p
+        )
+      )
+    );
+  }, []);
+
+  const blockUmbrella = useCallback((id: number) => {
+    setState((prev) =>
+      withActiveSnapshot(
+        prev,
+        prev.positions.map((p) =>
+          p.id === id
+            ? { ...p, code: "XX", status: "blocked" as const, roomCode: undefined, guestName: undefined }
+            : p
+        )
+      )
+    );
+  }, []);
+
+  const applyBulkAssignments = useCallback((assignments: BulkAssignment[], options: BulkImportOptions) => {
+    setState((prev) => {
+      const activeId = prev.periods.find((p) => p.isActive)?.id;
+      const snapshots = { ...prev.periodSnapshots };
+
+      if (activeId) {
+        snapshots[activeId] = {
+          ...snapshots[activeId],
+          positions: prev.positions,
         };
-      });
-    },
-    [activePeriod]
-  );
+      }
+
+      const newPeriodId = `p-${Date.now()}`;
+      const newPeriod: BookingPeriod = {
+        id: newPeriodId,
+        name: options.period.name.trim(),
+        startDate: options.period.startDate,
+        endDate: options.period.endDate,
+        isActive: true,
+      };
+
+      const newPositions = applyAssignmentsToPositions(
+        createEmptyPositions(),
+        assignments,
+        options.period.startDate,
+        options.period.endDate
+      );
+
+      snapshots[newPeriodId] = {
+        positions: newPositions,
+        referenceImage: options.referenceImage,
+      };
+
+      return {
+        ...prev,
+        periods: [...prev.periods.map((p) => ({ ...p, isActive: false })), newPeriod],
+        positions: newPositions,
+        periodSnapshots: snapshots,
+      };
+    });
+  }, []);
 
   const addViciniGroup = useCallback((positionIds: number[], label?: string) => {
     setState((prev) => ({
       ...prev,
-      viciniGroups: [
-        ...prev.viciniGroups,
-        { id: `v-${Date.now()}`, positionIds, label },
-      ],
+      viciniGroups: [...prev.viciniGroups, { id: `v-${Date.now()}`, positionIds, label }],
     }));
   }, []);
 
@@ -223,26 +291,61 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setActivePeriod = useCallback((periodId: string) => {
-    setState((prev) => ({
-      ...prev,
-      periods: prev.periods.map((p) => ({ ...p, isActive: p.id === periodId })),
-    }));
+    setState((prev) => {
+      const currentActiveId = prev.periods.find((p) => p.isActive)?.id;
+      const snapshots = { ...prev.periodSnapshots };
+
+      if (currentActiveId && currentActiveId !== periodId) {
+        snapshots[currentActiveId] = {
+          ...snapshots[currentActiveId],
+          positions: prev.positions,
+        };
+      }
+
+      const loaded =
+        snapshots[periodId]?.positions?.map((p) => ({ ...p })) ?? createEmptyPositions();
+
+      return {
+        ...prev,
+        periods: prev.periods.map((p) => ({ ...p, isActive: p.id === periodId })),
+        positions: loaded,
+        periodSnapshots: snapshots,
+      };
+    });
   }, []);
 
   const addPeriod = useCallback((period: Omit<BookingPeriod, "id">) => {
-    setState((prev) => ({
-      ...prev,
-      periods: [...prev.periods.map((p) => ({ ...p, isActive: false })), { ...period, id: `p-${Date.now()}` }],
-    }));
+    setState((prev) => {
+      const currentActiveId = prev.periods.find((p) => p.isActive)?.id;
+      const snapshots = { ...prev.periodSnapshots };
+
+      if (currentActiveId) {
+        snapshots[currentActiveId] = { ...snapshots[currentActiveId], positions: prev.positions };
+      }
+
+      const newId = `p-${Date.now()}`;
+      const empty = createEmptyPositions();
+
+      snapshots[newId] = { positions: empty };
+
+      return {
+        ...prev,
+        periods: [...prev.periods.map((p) => ({ ...p, isActive: false })), { ...period, id: newId, isActive: true }],
+        positions: empty,
+        periodSnapshots: snapshots,
+      };
+    });
   }, []);
 
   const resetToSeed = useCallback(() => {
-    setState(getInitialState());
+    const initial = getInitialState();
+    setState(initial);
+    saveAppState(initial);
   }, []);
 
   const exportData = useCallback(() => {
-    const { referenceImage, ...exportable } = state;
-    void referenceImage;
+    const exportable = { ...state };
+    delete exportable.referenceImage;
     return JSON.stringify(exportable, null, 2);
   }, [state]);
 
@@ -251,6 +354,7 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
       const parsed = migrateState(JSON.parse(json) as AppState);
       if (!parsed.positions?.length) return false;
       setState(parsed);
+      saveAppState(parsed);
       return true;
     } catch {
       return false;

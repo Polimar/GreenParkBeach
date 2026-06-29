@@ -1,9 +1,16 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { Camera, Upload, Loader2, CheckCircle, AlertTriangle, Eye, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera, Upload, Loader2, CheckCircle, AlertTriangle, Eye, X, Calendar } from "lucide-react";
 import { useBeach } from "@/lib/beach-context";
-import { ParsedAssignment, mergeParseResults, parseSheetText, parseSheetWords } from "@/lib/sheet-parser";
+import { isValidPeriod } from "@/lib/types";
+import {
+  ParsedAssignment,
+  mergeParseResults,
+  parsePeriodFromText,
+  parseSheetText,
+  parseSheetWords,
+} from "@/lib/sheet-parser";
 
 type Step = "idle" | "processing" | "preview" | "done";
 
@@ -18,10 +25,24 @@ export function PhotoImport() {
   const [rawText, setRawText] = useState("");
   const [showRaw, setShowRaw] = useState(false);
   const [imageData, setImageData] = useState<string | null>(null);
+  const [periodName, setPeriodName] = useState("");
+  const [periodStart, setPeriodStart] = useState("");
+  const [periodEnd, setPeriodEnd] = useState("");
+
+  useEffect(() => {
+    if (activePeriod && step === "idle") {
+      setPeriodName(activePeriod.name);
+      setPeriodStart(activePeriod.startDate);
+      setPeriodEnd(activePeriod.endDate);
+    }
+  }, [activePeriod, step]);
+
+  const periodValid = isValidPeriod({ name: periodName, startDate: periodStart, endDate: periodEnd });
 
   const processImage = useCallback(async (file: File) => {
     setStep("processing");
     setProgress("Caricamento immagine...");
+    setWarnings([]);
 
     const reader = new FileReader();
     const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -70,6 +91,14 @@ export function PhotoImport() {
       const spatialResult = parseSheetWords(words);
       const merged = mergeParseResults(textResult, spatialResult);
 
+      // Auto-compila periodo dal titolo del foglio se riconosciuto
+      const detectedPeriod = parsePeriodFromText(result.data.text);
+      if (detectedPeriod) {
+        setPeriodName(detectedPeriod.name);
+        setPeriodStart(detectedPeriod.startDate);
+        setPeriodEnd(detectedPeriod.endDate);
+      }
+
       setAssignments(merged.assignments);
       setWarnings(merged.warnings);
       setRawText(merged.rawText);
@@ -88,12 +117,13 @@ export function PhotoImport() {
   };
 
   const handleApply = () => {
+    if (!periodValid) return;
     applyBulkAssignments(
-      assignments.map((a) => ({
-        positionId: a.positionId,
-        roomCode: a.roomCode,
-      })),
-      imageData ?? undefined
+      assignments.map((a) => ({ positionId: a.positionId, roomCode: a.roomCode })),
+      {
+        period: { name: periodName.trim(), startDate: periodStart, endDate: periodEnd },
+        referenceImage: imageData ?? undefined,
+      }
     );
     setStep("done");
   };
@@ -105,10 +135,59 @@ export function PhotoImport() {
     setPreviewUrl(null);
     setImageData(null);
     setRawText("");
+    if (activePeriod) {
+      setPeriodName(activePeriod.name);
+      setPeriodStart(activePeriod.startDate);
+      setPeriodEnd(activePeriod.endDate);
+    }
   };
 
   const confidenceColor = (c: ParsedAssignment["confidence"]) =>
     c === "high" ? "text-emerald-600" : c === "medium" ? "text-amber-600" : "text-red-500";
+
+  const PeriodFields = (
+    <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50/50 p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm font-medium text-sky-800">
+        <Calendar className="h-4 w-4" />
+        Periodo del foglio
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="md:col-span-3">
+          <label className="mb-1 block text-xs text-gray-600">Nome periodo</label>
+          <input
+            value={periodName}
+            onChange={(e) => setPeriodName(e.target.value)}
+            placeholder="es. Luglio 2026 — 27/06 al 04/07"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-gray-600">Data inizio</label>
+          <input
+            type="date"
+            value={periodStart}
+            onChange={(e) => setPeriodStart(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-gray-600">Data fine</label>
+          <input
+            type="date"
+            value={periodEnd}
+            onChange={(e) => setPeriodEnd(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          />
+        </div>
+      </div>
+      {!periodValid && (periodName || periodStart || periodEnd) && (
+        <p className="mt-2 text-xs text-red-500">Inserisci nome e date valide (fine ≥ inizio)</p>
+      )}
+      <p className="mt-2 text-xs text-gray-500">
+        Il periodo viene salvato in modo permanente. Ogni import crea un nuovo periodo nel calendario.
+      </p>
+    </div>
+  );
 
   return (
     <div className="rounded-xl bg-white p-5 shadow-sm">
@@ -118,11 +197,11 @@ export function PhotoImport() {
       </div>
 
       <p className="mb-4 text-sm text-gray-500">
-        Carica la foto del foglio booking (come quello cartaceo) per importare automaticamente
-        le assegnazioni camera → ombrellone. Il nome camera include numero e suffisso
-        (es. <code className="rounded bg-gray-100 px-1">127D</code>,{" "}
-        <code className="rounded bg-gray-100 px-1">351GR</code>).
+        Imposta il periodo, poi carica la foto del foglio booking per importare le assegnazioni.
+        I dati restano salvati anche dopo il riavvio dell&apos;app.
       </p>
+
+      {PeriodFields}
 
       {step === "idle" && (
         <div
@@ -130,7 +209,7 @@ export function PhotoImport() {
           className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-sky-300 bg-sky-50/50 px-6 py-10 transition hover:border-sky-500 hover:bg-sky-50"
         >
           <Upload className="mb-3 h-10 w-10 text-sky-400" />
-          <p className="font-medium text-sky-700">Clicca o trascina la foto del foglio</p>
+          <p className="font-medium text-sky-700">Clicca per caricare la foto del foglio</p>
           <p className="mt-1 text-xs text-gray-400">JPG, PNG — foto nitida, vista dall&apos;alto</p>
           <input
             ref={fileRef}
@@ -140,6 +219,17 @@ export function PhotoImport() {
             className="hidden"
             onChange={handleFile}
           />
+        </div>
+      )}
+
+      {warnings.length > 0 && step === "idle" && (
+        <div className="mt-3 space-y-1">
+          {warnings.map((w, i) => (
+            <div key={i} className="flex items-start gap-1.5 text-xs text-amber-600">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {w}
+            </div>
+          ))}
         </div>
       )}
 
@@ -157,10 +247,12 @@ export function PhotoImport() {
             <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-emerald-700">
               <CheckCircle className="h-5 w-5" />
               <span className="font-medium">
-                {assignments.length} assegnazioni importate con successo!
+                Periodo &quot;{periodName}&quot; creato con {assignments.length} assegnazioni — salvato permanentemente.
               </span>
             </div>
           )}
+
+          {step === "preview" && PeriodFields}
 
           <div className="grid gap-4 md:grid-cols-2">
             {previewUrl && (
@@ -173,11 +265,6 @@ export function PhotoImport() {
             <div>
               <p className="mb-2 text-sm font-medium text-gray-700">
                 {assignments.length} assegnazioni riconosciute
-                {activePeriod && (
-                  <span className="ml-2 text-gray-400">
-                    (periodo: {activePeriod.name})
-                  </span>
-                )}
               </p>
 
               {warnings.length > 0 && (
@@ -238,11 +325,11 @@ export function PhotoImport() {
               <>
                 <button
                   onClick={handleApply}
-                  disabled={assignments.length === 0}
+                  disabled={assignments.length === 0 || !periodValid}
                   className="flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
                 >
                   <CheckCircle className="h-4 w-4" />
-                  Applica {assignments.length} assegnazioni
+                  Crea periodo e applica {assignments.length} assegnazioni
                 </button>
                 <button
                   onClick={handleReset}
@@ -257,7 +344,7 @@ export function PhotoImport() {
                 onClick={handleReset}
                 className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
               >
-                Carica un&apos;altra foto
+                Carica un altro foglio
               </button>
             )}
           </div>

@@ -284,3 +284,56 @@ export function mergeParseResults(...results: ParseResult[]): ParseResult {
     warnings: [...new Set(warnings)],
   };
 }
+
+export interface ParsedPeriod {
+  name: string;
+  startDate: string;
+  endDate: string;
+}
+
+const MONTHS: Record<string, string> = {
+  GENNAIO: "01", FEBBRAIO: "02", MARZO: "03", APRILE: "04",
+  MAGGIO: "05", GIUGNO: "06", LUGLIO: "07", AGOSTO: "08",
+  SETTEMBRE: "09", OTTOBRE: "10", NOVEMBRE: "11", DICEMBRE: "12",
+};
+
+/** Estrae periodo dal titolo del foglio, es. "LUGLIO 2026 DAL 27/06 AL 04/07" */
+export function parsePeriodFromText(rawText: string): ParsedPeriod | null {
+  const text = rawText.toUpperCase();
+
+  const yearMatch = text.match(/\b(20\d{2})\b/);
+  const year = yearMatch ? yearMatch[1] : String(new Date().getFullYear());
+
+  const rangeMatch = text.match(
+    /DAL\s*(\d{1,2})[/.-](\d{1,2})\s*AL\s*(\d{1,2})[/.-](\d{1,2})/
+  );
+
+  if (!rangeMatch) return null;
+
+  const [, d1, m1, d2, m2] = rangeMatch;
+  const pad = (n: string) => n.padStart(2, "0");
+
+  let startMonth = pad(m1);
+  let endMonth = pad(m2);
+  let startYear = year;
+  let endYear = year;
+
+  // Se il mese di fine < mese di inizio, probabilmente attraversa l'anno
+  if (parseInt(endMonth, 10) < parseInt(startMonth, 10)) {
+    endYear = String(parseInt(year, 10) + 1);
+  }
+
+  const startDate = `${startYear}-${startMonth}-${pad(d1)}`;
+  const endDate = `${endYear}-${endMonth}-${pad(d2)}`;
+
+  let name = `Periodo ${pad(d1)}/${startMonth} – ${pad(d2)}/${endMonth}`;
+  for (const [monthName, monthNum] of Object.entries(MONTHS)) {
+    if (text.includes(monthName)) {
+      name = `${monthName.charAt(0) + monthName.slice(1).toLowerCase()} ${year} — ${pad(d1)}/${startMonth} al ${pad(d2)}/${endMonth}`;
+      break;
+    }
+  }
+
+  return { name, startDate, endDate };
+}
+

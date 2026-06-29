@@ -20,6 +20,27 @@ const ROW_DATA: Record<number, (string | null)[]> = {
   8: ["229 E", "113 C", "304GR", "214 C", "206 B", "232 E", null, "120 D", "233 E", "203 A"],
 };
 
+export function createEmptyPositions(): UmbrellaPosition[] {
+  const positions: UmbrellaPosition[] = [];
+  let globalId = 1;
+
+  for (let row = 1; row <= 8; row++) {
+    const count = ROW_DATA[row].length;
+    for (let idx = 0; idx < count; idx++) {
+      positions.push({
+        id: globalId,
+        row,
+        positionInRow: idx + 1,
+        code: null,
+        status: "available",
+      });
+      globalId++;
+    }
+  }
+
+  return positions;
+}
+
 function buildPositions(): UmbrellaPosition[] {
   const positions: UmbrellaPosition[] = [];
   let globalId = 1;
@@ -60,10 +81,12 @@ const VICINI_GROUPS: ViciniGroup[] = [
 ];
 
 export function getInitialState(): AppState {
+  const positions = buildPositions();
   return {
-    positions: buildPositions(),
+    positions,
     viciniGroups: VICINI_GROUPS,
     periods: [DEFAULT_PERIOD],
+    periodSnapshots: { [DEFAULT_PERIOD.id]: { positions } },
     lastUpdated: new Date().toISOString(),
   };
 }
