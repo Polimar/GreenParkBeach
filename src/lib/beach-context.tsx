@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, canWrite } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { createEmptyPositions } from "@/lib/seed-data";
@@ -12,6 +12,7 @@ import {
   ViciniGroup,
   normalizeRoomCode,
 } from "@/lib/types";
+import { findPeriodForDate, todayIso } from "@/lib/utils";
 
 interface BulkAssignment {
   positionId: number;
@@ -77,6 +78,8 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const periodLandingDone = useRef(false);
+  const userPickedPeriod = useRef(false);
 
   const isReadOnly = !canWrite(role);
 
@@ -98,6 +101,13 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated, logout]);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      periodLandingDone.current = false;
+      userPickedPeriod.current = false;
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
     if (!isAuthenticated) return;
     setLoading(true);
     refresh();
@@ -109,6 +119,41 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
     () => state.periods.find((p) => p.isActive) ?? state.periods[0],
     [state.periods]
   );
+
+  const activatePeriodOnServer = useCallback(
+    async (periodId: string) => {
+      if (isReadOnly) {
+        const map = await apiFetch<{
+          period: BookingPeriod;
+          positions: UmbrellaPosition[];
+          viciniGroups: ViciniGroup[];
+        }>(`/api/periods/${periodId}`);
+        setState((prev) => ({
+          ...prev,
+          positions: map.positions,
+          viciniGroups: map.viciniGroups,
+          periods: prev.periods.map((p) => ({ ...p, isActive: p.id === periodId })),
+        }));
+        return;
+      }
+      const updated = await apiFetch<ServerStateResponse>(`/api/periods/${periodId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "activate" }),
+      });
+      setState(toAppState(updated));
+    },
+    [isReadOnly]
+  );
+
+  useEffect(() => {
+    if (!isAuthenticated || loading || periodLandingDone.current || state.periods.length === 0) return;
+
+    periodLandingDone.current = true;
+    const todayPeriod = findPeriodForDate(state.periods, todayIso());
+    if (!todayPeriod || todayPeriod.isActive || userPickedPeriod.current) return;
+
+    void activatePeriodOnServer(todayPeriod.id);
+  }, [isAuthenticated, loading, state.periods, activatePeriodOnServer]);
 
   const stats = useMemo(() => {
     const assigned = state.positions.filter((p) => p.status === "assigned").length;
@@ -189,27 +234,10 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
 
   const setActivePeriod = useCallback(
     async (periodId: string) => {
-      if (isReadOnly) {
-        const map = await apiFetch<{
-          period: BookingPeriod;
-          positions: UmbrellaPosition[];
-          viciniGroups: ViciniGroup[];
-        }>(`/api/periods/${periodId}`);
-        setState((prev) => ({
-          ...prev,
-          positions: map.positions,
-          viciniGroups: map.viciniGroups,
-          periods: prev.periods.map((p) => ({ ...p, isActive: p.id === periodId })),
-        }));
-        return;
-      }
-      const updated = await apiFetch<ServerStateResponse>(`/api/periods/${periodId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ action: "activate" }),
-      });
-      setState(toAppState(updated));
+      userPickedPeriod.current = true;
+      await activatePeriodOnServer(periodId);
     },
-    [isReadOnly]
+    [activatePeriodOnServer]
   );
 
   const addPeriod = useCallback(

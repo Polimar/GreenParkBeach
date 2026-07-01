@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Upload, Loader2, CheckCircle, AlertTriangle, Eye, X, Calendar } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { Camera, Upload, Loader2, CheckCircle, AlertTriangle, Eye, X, Calendar, Plus } from "lucide-react";
 import { useBeach } from "@/lib/beach-context";
 import { isValidPeriod } from "@/lib/types";
 import {
@@ -15,7 +15,7 @@ import {
 type Step = "idle" | "processing" | "preview" | "done";
 
 export function PhotoImport() {
-  const { applyBulkAssignments, activePeriod } = useBeach();
+  const { applyBulkAssignments, addPeriod } = useBeach();
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>("idle");
   const [progress, setProgress] = useState("");
@@ -29,16 +29,15 @@ export function PhotoImport() {
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
   const [applying, setApplying] = useState(false);
-
-  useEffect(() => {
-    if (activePeriod && step === "idle") {
-      setPeriodName(activePeriod.name);
-      setPeriodStart(activePeriod.startDate);
-      setPeriodEnd(activePeriod.endDate);
-    }
-  }, [activePeriod, step]);
+  const [creatingEmpty, setCreatingEmpty] = useState(false);
 
   const periodValid = isValidPeriod({ name: periodName, startDate: periodStart, endDate: periodEnd });
+
+  const resetPeriodFields = () => {
+    setPeriodName("");
+    setPeriodStart("");
+    setPeriodEnd("");
+  };
 
   const processImage = useCallback(async (file: File) => {
     setStep("processing");
@@ -117,6 +116,26 @@ export function PhotoImport() {
     e.target.value = "";
   };
 
+  const handleCreateEmpty = async () => {
+    if (!periodValid) return;
+    setCreatingEmpty(true);
+    setWarnings([]);
+    try {
+      await addPeriod({
+        name: periodName.trim(),
+        startDate: periodStart,
+        endDate: periodEnd,
+        isActive: true,
+      });
+      setAssignments([]);
+      setStep("done");
+    } catch {
+      setWarnings(["Errore nella creazione del periodo. Riprova."]);
+    } finally {
+      setCreatingEmpty(false);
+    }
+  };
+
   const handleApply = async () => {
     if (!periodValid) return;
     setApplying(true);
@@ -143,11 +162,7 @@ export function PhotoImport() {
     setPreviewUrl(null);
     setImageData(null);
     setRawText("");
-    if (activePeriod) {
-      setPeriodName(activePeriod.name);
-      setPeriodStart(activePeriod.startDate);
-      setPeriodEnd(activePeriod.endDate);
-    }
+    resetPeriodFields();
   };
 
   const confidenceColor = (c: ParsedAssignment["confidence"]) =>
@@ -200,33 +215,46 @@ export function PhotoImport() {
   return (
     <div className="rounded-xl bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center gap-2">
-        <Camera className="h-5 w-5 text-sky-600" />
-        <h3 className="font-semibold text-gray-800">Importa da Foto Foglio</h3>
+        <Calendar className="h-5 w-5 text-sky-600" />
+        <h3 className="font-semibold text-gray-800">Nuovo periodo</h3>
       </div>
 
       <p className="mb-4 text-sm text-gray-500">
-        Imposta il periodo, poi carica la foto del foglio booking per importare le assegnazioni.
-        I dati restano salvati anche dopo il riavvio dell&apos;app.
+        Crea un periodo vuoto e compila le assegnazioni a mano sulla mappa, oppure carica
+        una foto del foglio booking per importarle automaticamente.
       </p>
 
       {PeriodFields}
 
       {step === "idle" && (
-        <div
-          onClick={() => fileRef.current?.click()}
-          className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-sky-300 bg-sky-50/50 px-6 py-10 transition hover:border-sky-500 hover:bg-sky-50"
-        >
-          <Upload className="mb-3 h-10 w-10 text-sky-400" />
-          <p className="font-medium text-sky-700">Clicca per caricare la foto del foglio</p>
-          <p className="mt-1 text-xs text-gray-400">JPG, PNG — foto nitida, vista dall&apos;alto</p>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={handleFile}
-          />
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={handleCreateEmpty}
+            disabled={!periodValid || creatingEmpty}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-3 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+            {creatingEmpty ? "Creazione..." : "Crea periodo vuoto"}
+          </button>
+
+          <div
+            onClick={() => fileRef.current?.click()}
+            className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-sky-300 bg-sky-50/50 px-6 py-8 transition hover:border-sky-500 hover:bg-sky-50"
+          >
+            <Camera className="mb-2 h-8 w-8 text-sky-400" />
+            <Upload className="mb-2 h-6 w-6 text-sky-400" />
+            <p className="font-medium text-sky-700">Oppure importa da foto del foglio</p>
+            <p className="mt-1 text-xs text-gray-400">JPG, PNG — foto nitida, vista dall&apos;alto</p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleFile}
+            />
+          </div>
         </div>
       )}
 
@@ -255,7 +283,9 @@ export function PhotoImport() {
             <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-emerald-700">
               <CheckCircle className="h-5 w-5" />
               <span className="font-medium">
-                Periodo &quot;{periodName}&quot; creato con {assignments.length} assegnazioni — salvato permanentemente.
+                Periodo &quot;{periodName}&quot; creato
+                {assignments.length > 0 ? ` con ${assignments.length} assegnazioni` : " (vuoto, compila dalla mappa)"}
+                {" "}— salvato permanentemente.
               </span>
             </div>
           )}
@@ -352,7 +382,7 @@ export function PhotoImport() {
                 onClick={handleReset}
                 className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
               >
-                Carica un altro foglio
+                Crea un altro periodo
               </button>
             )}
           </div>

@@ -1,0 +1,10 @@
+---
+description: Workflow git per questo repository
+alwaysApply: true
+---
+
+# Git workflow
+
+- Pushare **direttamente su `origin/main`**: niente branch feature, niente pull request.
+- Commit chiari, poi `git push origin main`.
+- Un solo sviluppatore su questo repo.
