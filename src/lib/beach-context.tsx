@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch, canWrite } from "@/lib/api-client";
+import { apiFetch, canEditAssignments, canWrite } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { createEmptyPositions } from "@/lib/seed-data";
 import {
@@ -32,11 +32,22 @@ interface ServerStateResponse {
   lastUpdated: string;
 }
 
+interface AssignmentUpdateResponse {
+  period: BookingPeriod;
+  positions: UmbrellaPosition[];
+  viciniGroups: ViciniGroup[];
+  periods: BookingPeriod[];
+  lastUpdated: string;
+}
+
 interface BeachContextValue {
   state: AppState;
   activePeriod: BookingPeriod | undefined;
   loading: boolean;
   error: string | null;
+  isAdmin: boolean;
+  canEditAssignments: boolean;
+  /** @deprecated usa canEditAssignments */
   isReadOnly: boolean;
   refresh: () => Promise<void>;
   assignUmbrella: (id: number, data: Partial<UmbrellaPosition>) => Promise<void>;
@@ -60,6 +71,15 @@ const BeachContext = createContext<BeachContextValue | null>(null);
 
 const POLL_MS = 20_000;
 
+function mergeAssignmentUpdate(_prev: AppState, data: AssignmentUpdateResponse): AppState {
+  return {
+    positions: data.positions,
+    viciniGroups: data.viciniGroups,
+    periods: data.periods.map((p) => ({ ...p, isActive: p.id === data.period.id })),
+    lastUpdated: data.lastUpdated,
+  };
+}
+
 function toAppState(data: ServerStateResponse): AppState {
   return {
     positions: data.positions,
@@ -80,14 +100,33 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const periodLandingDone = useRef(false);
   const userPickedPeriod = useRef(false);
+  const viewedPeriodIdRef = useRef<string | null>(null);
 
-  const isReadOnly = !canWrite(role);
+  const isAdmin = canWrite(role);
+  const canEdit = canEditAssignments(role);
+  const isReadOnly = !canEdit;
 
   const refresh = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
       const data = await apiFetch<ServerStateResponse>("/api/state");
-      setState(toAppState(data));
+      const viewedId = viewedPeriodIdRef.current;
+
+      if (!isAdmin && viewedId) {
+        const map = await apiFetch<{
+          period: BookingPeriod;
+          positions: UmbrellaPosition[];
+          viciniGroups: ViciniGroup[];
+        }>(`/api/periods/${viewedId}`);
+        setState({
+          positions: map.positions,
+          viciniGroups: map.viciniGroups,
+          periods: data.periods.map((p) => ({ ...p, isActive: p.id === viewedId })),
+          lastUpdated: data.lastUpdated,
+        });
+      } else {
+        setState(toAppState(data));
+      }
       setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Errore di connessione";
@@ -98,7 +137,7 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, logout]);
+  }, [isAuthenticated, isAdmin, logout]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -120,9 +159,14 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
     [state.periods]
   );
 
+  useEffect(() => {
+    if (activePeriod) viewedPeriodIdRef.current = activePeriod.id;
+  }, [activePeriod?.id]);
+
   const activatePeriodOnServer = useCallback(
     async (periodId: string) => {
-      if (isReadOnly) {
+      viewedPeriodIdRef.current = periodId;
+      if (!isAdmin) {
         const map = await apiFetch<{
           period: BookingPeriod;
           positions: UmbrellaPosition[];
@@ -142,7 +186,7 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
       });
       setState(toAppState(updated));
     },
-    [isReadOnly]
+    [isAdmin]
   );
 
   useEffect(() => {
@@ -170,10 +214,10 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
 
   const assignUmbrella = useCallback(
     async (id: number, data: Partial<UmbrellaPosition>) => {
-      if (!activePeriod || isReadOnly) return;
+      if (!activePeriod || !canEdit) return;
       const roomCode = data.roomCode ? normalizeRoomCode(data.roomCode) : undefined;
       if (!roomCode) return;
-      const updated = await apiFetch<ServerStateResponse>(
+      const updated = await apiFetch<AssignmentUpdateResponse>(
         `/api/periods/${activePeriod.id}/assignments`,
         {
           method: "PUT",
@@ -186,38 +230,38 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
           }),
         }
       );
-      setState(toAppState(updated));
+      setState((prev) => mergeAssignmentUpdate(prev, updated));
     },
-    [activePeriod, isReadOnly]
+    [activePeriod, canEdit]
   );
 
   const clearUmbrella = useCallback(
     async (id: number) => {
-      if (!activePeriod || isReadOnly) return;
-      const updated = await apiFetch<ServerStateResponse>(
+      if (!activePeriod || !canEdit) return;
+      const updated = await apiFetch<AssignmentUpdateResponse>(
         `/api/periods/${activePeriod.id}/assignments`,
         { method: "PUT", body: JSON.stringify({ positionId: id, action: "clear" }) }
       );
-      setState(toAppState(updated));
+      setState((prev) => mergeAssignmentUpdate(prev, updated));
     },
-    [activePeriod, isReadOnly]
+    [activePeriod, canEdit]
   );
 
   const blockUmbrella = useCallback(
     async (id: number) => {
-      if (!activePeriod || isReadOnly) return;
-      const updated = await apiFetch<ServerStateResponse>(
+      if (!activePeriod || !canEdit) return;
+      const updated = await apiFetch<AssignmentUpdateResponse>(
         `/api/periods/${activePeriod.id}/assignments`,
         { method: "PUT", body: JSON.stringify({ positionId: id, action: "block" }) }
       );
-      setState(toAppState(updated));
+      setState((prev) => mergeAssignmentUpdate(prev, updated));
     },
-    [activePeriod, isReadOnly]
+    [activePeriod, canEdit]
   );
 
   const applyBulkAssignments = useCallback(
     async (assignments: BulkAssignment[], options: BulkImportOptions) => {
-      if (isReadOnly) return;
+      if (!isAdmin) return;
       const updated = await apiFetch<ServerStateResponse>("/api/periods/import", {
         method: "PUT",
         body: JSON.stringify({
@@ -229,7 +273,7 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
       });
       setState(toAppState(updated));
     },
-    [isReadOnly]
+    [isAdmin]
   );
 
   const setActivePeriod = useCallback(
@@ -242,14 +286,14 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
 
   const addPeriod = useCallback(
     async (period: Omit<BookingPeriod, "id">) => {
-      if (isReadOnly) return;
+      if (!isAdmin) return;
       const res = await apiFetch<{ period: BookingPeriod; state: ServerStateResponse }>("/api/periods", {
         method: "POST",
         body: JSON.stringify(period),
       });
       setState(toAppState(res.state));
     },
-    [isReadOnly]
+    [isAdmin]
   );
 
   const searchPositions = useCallback(
@@ -277,6 +321,8 @@ export function BeachProvider({ children }: { children: React.ReactNode }) {
     activePeriod,
     loading,
     error,
+    isAdmin,
+    canEditAssignments: canEdit,
     isReadOnly,
     refresh,
     assignUmbrella,

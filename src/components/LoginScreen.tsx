@@ -74,7 +74,7 @@ export function LoginScreen() {
           </div>
           <div className="flex items-center gap-2">
             <Waves className="h-4 w-4 shrink-0 text-emerald-600" />
-            <span><strong>Bagnino:</strong> <code className="rounded bg-white px-1">bagnino</code></span>
+            <span><strong>Bagnino:</strong> <code className="rounded bg-white px-1">bagnino</code> — modifica camere su tutti i periodi</span>
           </div>
         </div>
       </div>

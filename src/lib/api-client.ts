@@ -100,4 +100,8 @@ export function canWrite(role: StaffRole | null): boolean {
   return role === "admin";
 }
 
+export function canEditAssignments(role: StaffRole | null): boolean {
+  return role === "admin" || role === "bagnino";
+}
+
 export { AUTH_COOKIE };

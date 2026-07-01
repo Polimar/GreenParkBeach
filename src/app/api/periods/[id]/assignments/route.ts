@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, dbUnavailableResponse } from "@/lib/api-auth";
-import { fetchServerState, isDbConfigured, upsertAssignment } from "@/lib/db";
+import { requireAuth, dbUnavailableResponse } from "@/lib/api-auth";
+import { fetchPeriodMap, fetchServerState, isDbConfigured, upsertAssignment } from "@/lib/db";
 import { normalizeRoomCode } from "@/lib/types";
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = requireAdmin(request);
+  const auth = requireAuth(request);
   if (auth instanceof NextResponse) return auth;
   if (!(await isDbConfigured())) return dbUnavailableResponse();
 
@@ -42,8 +42,15 @@ export async function PUT(
       return NextResponse.json({ error: "Dati assegnazione non validi" }, { status: 400 });
     }
 
-    const state = await fetchServerState();
-    return NextResponse.json(state);
+    const map = await fetchPeriodMap(periodId);
+    const { periods, lastUpdated } = await fetchServerState();
+    return NextResponse.json({
+      period: map.period,
+      positions: map.positions,
+      viciniGroups: map.viciniGroups,
+      periods,
+      lastUpdated,
+    });
   } catch {
     return NextResponse.json({ error: "Errore salvataggio" }, { status: 500 });
   }

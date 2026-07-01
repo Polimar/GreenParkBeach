@@ -31,7 +31,7 @@ const MOBILE_TABS: { id: Tab; label: string; icon: typeof Grid3X3 }[] = [
 
 export function AppShell() {
   const { logout } = useAuth();
-  const { stats, activePeriod, refresh, error, isReadOnly, loading } = useBeach();
+  const { stats, activePeriod, refresh, error, isAdmin, canEditAssignments, loading } = useBeach();
   const [tab, setTab] = useState<Tab>("grid");
   const [selected, setSelected] = useState<UmbrellaPosition | null>(null);
   const [searchHighlightId, setSearchHighlightId] = useState<number | undefined>();
@@ -52,9 +52,9 @@ export function AppShell() {
     setRefreshing(false);
   };
 
-  const tabs = isReadOnly
-    ? MOBILE_TABS
-    : [...MOBILE_TABS, { id: "settings" as Tab, label: "Admin", icon: Settings }];
+  const tabs = isAdmin
+    ? [...MOBILE_TABS, { id: "settings" as Tab, label: "Admin", icon: Settings }]
+    : MOBILE_TABS;
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-gradient-to-b from-sky-50 to-amber-50/30">
@@ -74,10 +74,10 @@ export function AppShell() {
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <span className={`hidden items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium sm:flex ${
-              isReadOnly ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
+              isAdmin ? "bg-sky-100 text-sky-700" : "bg-emerald-100 text-emerald-700"
             }`}>
-              {isReadOnly ? <Waves className="h-3 w-3" /> : <Shield className="h-3 w-3" />}
-              {isReadOnly ? "Bagnino" : "Admin"}
+              {isAdmin ? <Shield className="h-3 w-3" /> : <Waves className="h-3 w-3" />}
+              {isAdmin ? "Admin" : "Bagnino"}
             </span>
             <button
               type="button"
@@ -114,7 +114,7 @@ export function AppShell() {
           />
         )}
         {tab === "calendar" && <CalendarView />}
-        {tab === "settings" && !isReadOnly && (
+        {tab === "settings" && isAdmin && (
           <div className="space-y-4">
             <PhotoImport />
             <div className="rounded-xl bg-white p-4 text-sm text-gray-500 shadow-sm">
@@ -143,7 +143,7 @@ export function AppShell() {
         </div>
       </nav>
 
-      <AssignmentModal position={selected} onClose={() => setSelected(null)} readOnly={isReadOnly} />
+      <AssignmentModal position={selected} onClose={() => setSelected(null)} readOnly={!canEditAssignments} />
     </div>
   );
 }

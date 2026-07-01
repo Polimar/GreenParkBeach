@@ -5,7 +5,7 @@ import { Calendar, Plus } from "lucide-react";
 import { useState } from "react";
 
 export function CalendarView() {
-  const { state, activePeriod, setActivePeriod, addPeriod, isReadOnly } = useBeach();
+  const { state, activePeriod, setActivePeriod, addPeriod, isAdmin } = useBeach();
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState("");
   const [newStart, setNewStart] = useState("");
@@ -39,7 +39,7 @@ export function CalendarView() {
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-sky-900">Periodi</h2>
-        {!isReadOnly && (
+        {isAdmin && (
           <button
             onClick={() => setShowAdd(!showAdd)}
             className="flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-sm text-white active:scale-95"
@@ -49,7 +49,7 @@ export function CalendarView() {
         )}
       </div>
 
-      {showAdd && !isReadOnly && (
+      {showAdd && isAdmin && (
         <div className="rounded-xl border border-sky-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3">
             <input
